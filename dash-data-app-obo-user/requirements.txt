@@ -8,3 +8,4 @@ python-dotenv
 dash-ag-grid
 databricks-sdk[databricks-sql]
 pyyaml
+wordcloud

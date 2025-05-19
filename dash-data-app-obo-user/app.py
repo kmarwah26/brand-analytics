@@ -9,6 +9,8 @@ import dash_bootstrap_components as dbc
 import dash_ag_grid as dag
 import flask  # for request context
 import base64
+from wordcloud import WordCloud
+import io
 # from config import DATABRICKS_CONFIG, validate_config
 # from data_query import sql_query_with_service_principal, sql_query_with_user_token
 
@@ -20,12 +22,14 @@ def generate_sample_data() -> pd.DataFrame:
     np.random.seed(42)
     n_samples = 2000  # Increased sample size
     
-    # Generate dates for the past year
-    dates = pd.date_range(end=pd.Timestamp.now(), periods=365, freq='D')
+    # Generate dates for the past year with more recent dates having higher frequency
+    end_date = pd.Timestamp.now()
+    start_date = end_date - pd.DateOffset(months=12)
+    dates = pd.date_range(start=start_date, end=end_date, freq='D')
     
     # Generate categories with different characteristics
-    categories = ['Apple Products', 'Industrial & Scientific', 'All Beauty', 'Health & Personal Care', 'Fire Phone', 'Amazon Devices']
-    category_weights = [0.35, 0.25, 0.20, 0.15, 0.025, 0.025]  # Weights sum to 1.0
+    categories = ['Apple Products', 'Industrial & Scientific', 'Health & Personal Care', 'Amazon Devices']
+    category_weights = [0.4, 0.3, 0.2, 0.1]  # Weights sum to 1.0
     
     # Generate random data with more realistic patterns
     data = pd.DataFrame({
@@ -81,10 +85,10 @@ def generate_sample_data() -> pd.DataFrame:
     
     # Add category-specific patterns
     category_patterns = {
-        'Category A': {'rating_boost': 1.2, 'sentiment_boost': 0.9},
-        'Category B': {'rating_boost': 1.1, 'sentiment_boost': 0.8},
-        'Category C': {'rating_boost': 0.9, 'sentiment_boost': 0.7},
-        'Category D': {'rating_boost': 0.8, 'sentiment_boost': 0.6}
+        'Apple Products': {'rating_boost': 1.2, 'sentiment_boost': 0.9},
+        'Industrial & Scientific': {'rating_boost': 1.1, 'sentiment_boost': 0.8},
+        'Health & Personal Care': {'rating_boost': 0.9, 'sentiment_boost': 0.7},
+        'Amazon Devices': {'rating_boost': 0.8, 'sentiment_boost': 0.6}
     }
     
     for category, pattern in category_patterns.items():
@@ -237,21 +241,18 @@ app.layout = dbc.Container([
             dbc.Card([
                 dbc.CardHeader("Filters", style=CARD_HEADER_STYLE),
                 dbc.CardBody([
-                    dbc.Row([
-                        dbc.Col([
+    dbc.Row([
+        dbc.Col([
                             dbc.Label("Category", className="text-light"),
                             dcc.Dropdown(
                                 id='category-filter',
                                 options=[
-                                    {'label': 'All Categories', 'value': 'all'},
                                     {'label': 'Apple Products', 'value': 'Apple Products'},
                                     {'label': 'Industrial & Scientific', 'value': 'Industrial & Scientific'},
-                                    {'label': 'All Beauty', 'value': 'All Beauty'},
                                     {'label': 'Health & Personal Care', 'value': 'Health & Personal Care'},
-                                    {'label': 'Fire Phone', 'value': 'Fire Phone'},
                                     {'label': 'Amazon Devices', 'value': 'Amazon Devices'}
                                 ],
-                                value='all',
+                                value='Apple Products',
                                 className="mb-3"
                             )
                         ], width=6),
@@ -430,12 +431,10 @@ app.layout = dbc.Container([
                                         options=[
                                             {'label': 'Apple Products', 'value': 'Apple Products'},
                                             {'label': 'Industrial & Scientific', 'value': 'Industrial & Scientific'},
-                                            {'label': 'All Beauty', 'value': 'All Beauty'},
                                             {'label': 'Health & Personal Care', 'value': 'Health & Personal Care'},
-                                            {'label': 'Fire Phone', 'value': 'Fire Phone'},
                                             {'label': 'Amazon Devices', 'value': 'Amazon Devices'}
                                         ],
-                                        value='Category A',
+                                        value='Apple Products',
                                         className="mb-3"
                                     )
                                 ], width=6),
@@ -446,12 +445,10 @@ app.layout = dbc.Container([
                                         options=[
                                             {'label': 'Apple Products', 'value': 'Apple Products'},
                                             {'label': 'Industrial & Scientific', 'value': 'Industrial & Scientific'},
-                                            {'label': 'All Beauty', 'value': 'All Beauty'},
                                             {'label': 'Health & Personal Care', 'value': 'Health & Personal Care'},
-                                            {'label': 'Fire Phone', 'value': 'Fire Phone'},
                                             {'label': 'Amazon Devices', 'value': 'Amazon Devices'}
                                         ],
-                                        value='Category B',
+                                        value='Apple Products',
                                         className="mb-3"
                                     )
                                 ], width=6)
@@ -480,7 +477,16 @@ app.layout = dbc.Container([
                     dbc.Card([
                         dbc.CardHeader("Competitive Analysis", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
-                            dcc.Graph(id='competitive-radar', style={'height': '400px'})
+                            dbc.Row([
+                                dbc.Col([
+                                    html.H4("Positive Feedback Word Cloud", className="text-center mb-3"),
+                                    html.Img(id='positive-wordcloud', style={'width': '100%', 'height': 'auto'})
+                                ], width=6),
+                                dbc.Col([
+                                    html.H4("Negative Feedback Word Cloud", className="text-center mb-3"),
+                                    html.Img(id='negative-wordcloud', style={'width': '100%', 'height': 'auto'})
+                                ], width=6)
+                            ])
                         ])
                     ], style=CARD_STYLE)
                 ], width=12)
@@ -500,7 +506,8 @@ app.layout = dbc.Container([
     Output('competitive-score', 'children'),
     Output('product-score', 'children'),
     Output('market-share-trend', 'figure'),
-    Output('competitive-radar', 'figure'),
+    Output('positive-wordcloud', 'src'),
+    Output('negative-wordcloud', 'src'),
     Output('attribute-analysis', 'figure'),
     Output('sentiment-value', 'children'),
     Output('total-reviews-counter', 'children'),
@@ -515,12 +522,39 @@ def update_visuals(n_clicks, category, sentiment_threshold, category1, category2
     data = load_data()
     
     # Apply filters
-    if category != 'all':
-        data = data[data['category'] == category]
+    data = data[data['category'] == category]
     
     # Filter by sentiment threshold
     sentiment_scores = data['rating'] * 20  # Convert 1-5 rating to 0-100 scale
     data = data[sentiment_scores >= sentiment_threshold]
+    
+    # Generate word clouds
+    def generate_wordcloud(texts, max_words=100):
+        if not texts:
+            return None
+        text = ' '.join(texts)
+        wordcloud = WordCloud(
+            width=800,
+            height=400,
+            background_color='#2d3436',
+            colormap='viridis',
+            max_words=max_words,
+            contour_width=1,
+            contour_color='#636e72'
+        ).generate(text)
+        
+        # Convert to base64 for display
+        img = io.BytesIO()
+        wordcloud.to_image().save(img, format='PNG')
+        img.seek(0)
+        return f'data:image/png;base64,{base64.b64encode(img.getvalue()).decode()}'
+    
+    # Generate positive and negative word clouds
+    positive_reviews = data[data['sentiment'] == 'Positive']['review_text'].tolist()
+    negative_reviews = data[data['sentiment'] == 'Negative']['review_text'].tolist()
+    
+    positive_wordcloud = generate_wordcloud(positive_reviews)
+    negative_wordcloud = generate_wordcloud(negative_reviews)
     
     # Create donut chart for sentiment distribution
     sentiment_counts = data['sentiment'].value_counts()
@@ -558,15 +592,25 @@ def update_visuals(n_clicks, category, sentiment_threshold, category1, category2
     )
     
     # Create category comparison chart
-    date_range = pd.date_range(end=pd.Timestamp.now(), periods=12, freq='M')
+    end_date = pd.Timestamp.now()
+    start_date = end_date - pd.DateOffset(months=12)
+    date_range = pd.date_range(start=start_date, end=end_date, freq='M')
     
     # Generate monthly review counts for selected categories
     def get_monthly_counts(data, category):
-        # Convert dates to month-end and count reviews
-        monthly_data = data[data['category'] == category].copy()
-        monthly_data['month'] = monthly_data['date'].dt.to_period('M')
-        return monthly_data.groupby('month').size()
+        # Filter data for the specific category
+        category_data = data[data['category'] == category].copy()
+        
+        # Convert dates to month and count reviews
+        category_data['month'] = category_data['date'].dt.to_period('M')
+        monthly_counts = category_data.groupby('month').size()
+        
+        # Create a series with all months, filling missing months with 0
+        full_counts = pd.Series(0, index=date_range.to_period('M'))
+        full_counts.update(monthly_counts)
+        return full_counts
     
+    # Get data for both categories
     category1_data = get_monthly_counts(data, category1)
     category2_data = get_monthly_counts(data, category2)
     
@@ -576,22 +620,24 @@ def update_visuals(n_clicks, category, sentiment_threshold, category1, category2
     # Add bars for category 1
     comparison_fig.add_trace(go.Bar(
         x=[d.strftime('%Y-%m') for d in date_range],
-        y=[category1_data.get(pd.Period(d, freq='M'), 0) for d in date_range],
+        y=category1_data.values,
         name=category1,
-        marker_color='#3498db'
+        marker_color='#3498db',
+        opacity=0.8
     ))
     
     # Add bars for category 2
     comparison_fig.add_trace(go.Bar(
         x=[d.strftime('%Y-%m') for d in date_range],
-        y=[category2_data.get(pd.Period(d, freq='M'), 0) for d in date_range],
+        y=category2_data.values,
         name=category2,
-        marker_color='#e74c3c'
+        marker_color='#e74c3c',
+        opacity=0.8
     ))
     
     comparison_fig.update_layout(
         title='Monthly Review Comparison',
-        barmode='group',
+        barmode='stack',  # Changed to stacked bars
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
         font=dict(color='white'),
@@ -610,7 +656,16 @@ def update_visuals(n_clicks, category, sentiment_threshold, category1, category2
             y=1.02,
             xanchor="center",
             x=0.5
-        )
+        ),
+        hovermode='x unified'  # Added unified hover mode
+    )
+    
+    # Add hover template
+    comparison_fig.update_traces(
+        hovertemplate="<b>%{x}</b><br>" +
+                     "Category: %{fullData.name}<br>" +
+                     "Reviews: %{y}<br>" +
+                     "<extra></extra>"
     )
     
     # Calculate key metrics
@@ -662,36 +717,6 @@ def update_visuals(n_clicks, category, sentiment_threshold, category1, category2
         yaxis=dict(gridcolor='#404040')
     )
     
-    # Create competitive radar chart
-    categories = ['Price', 'Quality', 'Service', 'Innovation', 'Brand Value']
-    our_scores = np.random.uniform(7, 9, len(categories))
-    competitor_scores = np.random.uniform(6, 8, len(categories))
-    
-    radar_fig = go.Figure()
-    radar_fig.add_trace(go.Scatterpolar(
-        r=our_scores,
-        theta=categories,
-        fill='toself',
-        name='Our Brand'
-    ))
-    radar_fig.add_trace(go.Scatterpolar(
-        r=competitor_scores,
-        theta=categories,
-        fill='toself',
-        name='Competitor'
-    ))
-    radar_fig.update_layout(
-        polar=dict(
-            radialaxis=dict(
-                visible=True,
-                range=[0, 10]
-            )
-        ),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white')
-    )
-    
     # Create attribute analysis
     attributes = ['Quality', 'Price', 'Service', 'Innovation', 'Design']
     importance = np.random.uniform(0.7, 1.0, len(attributes))
@@ -729,7 +754,8 @@ def update_visuals(n_clicks, category, sentiment_threshold, category1, category2
         competitive_score,
         product_score,
         market_share_fig,
-        radar_fig,
+        positive_wordcloud,
+        negative_wordcloud,
         attribute_fig,
         sentiment_value,
         f"{total_reviews:,}",

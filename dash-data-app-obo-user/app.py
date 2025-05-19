@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 import dash_bootstrap_components as dbc
 import dash_ag_grid as dag
 import flask  # for request context
+import base64
 # from config import DATABRICKS_CONFIG, validate_config
 # from data_query import sql_query_with_service_principal, sql_query_with_user_token
 
@@ -15,25 +16,25 @@ import flask  # for request context
 # validate_config()
 
 def generate_sample_data() -> pd.DataFrame:
-    """Generate comprehensive sample brand review data."""
+    """Generate comprehensive sample category review data."""
     np.random.seed(42)
     n_samples = 2000  # Increased sample size
     
     # Generate dates for the past year
     dates = pd.date_range(end=pd.Timestamp.now(), periods=365, freq='D')
     
-    # Generate brands with different characteristics
-    brands = ['Brand A', 'Brand B', 'Brand C', 'Brand D']
-    brand_weights = [0.4, 0.3, 0.2, 0.1]  # Different weights for each brand
+    # Generate categories with different characteristics
+    categories = ['Apple Products', 'Industrial & Scientific', 'All Beauty', 'Health & Personal Care', 'Fire Phone', 'Amazon Devices']
+    category_weights = [0.35, 0.25, 0.20, 0.15, 0.025, 0.025]  # Weights sum to 1.0
     
     # Generate random data with more realistic patterns
     data = pd.DataFrame({
         'date': np.random.choice(dates, n_samples),
-        'brand': np.random.choice(brands, n_samples, p=brand_weights),
+        'category': np.random.choice(categories, n_samples, p=category_weights),
         'source': np.random.choice(['Website', 'Social Media', 'App Store', 'Email'], n_samples, p=[0.4, 0.3, 0.2, 0.1]),
         'rating': np.random.randint(1, 6, n_samples),
         'review_text': [
-            f"Sample review text {i} about the brand experience and product quality."
+            f"Sample review text {i} about the category experience and product quality."
             for i in range(n_samples)
         ]
     })
@@ -78,16 +79,16 @@ def generate_sample_data() -> pd.DataFrame:
     
     data['seasonal_rating'] = data.apply(add_seasonal_pattern, axis=1)
     
-    # Add brand-specific patterns
-    brand_patterns = {
-        'Brand A': {'rating_boost': 1.2, 'sentiment_boost': 0.9},
-        'Brand B': {'rating_boost': 1.1, 'sentiment_boost': 0.8},
-        'Brand C': {'rating_boost': 0.9, 'sentiment_boost': 0.7},
-        'Brand D': {'rating_boost': 0.8, 'sentiment_boost': 0.6}
+    # Add category-specific patterns
+    category_patterns = {
+        'Category A': {'rating_boost': 1.2, 'sentiment_boost': 0.9},
+        'Category B': {'rating_boost': 1.1, 'sentiment_boost': 0.8},
+        'Category C': {'rating_boost': 0.9, 'sentiment_boost': 0.7},
+        'Category D': {'rating_boost': 0.8, 'sentiment_boost': 0.6}
     }
     
-    for brand, pattern in brand_patterns.items():
-        mask = data['brand'] == brand
+    for category, pattern in category_patterns.items():
+        mask = data['category'] == category
         data.loc[mask, 'rating'] = data.loc[mask, 'rating'] * pattern['rating_boost']
         data.loc[mask, 'market_share'] = data.loc[mask, 'market_share'] * pattern['sentiment_boost']
     
@@ -95,8 +96,8 @@ def generate_sample_data() -> pd.DataFrame:
     data['rating'] = data['rating'].clip(1, 5)
     
     # Add review categories
-    categories = ['Product', 'Service', 'Price', 'Quality', 'Experience']
-    data['category'] = np.random.choice(categories, n_samples, p=[0.3, 0.3, 0.2, 0.1, 0.1])
+    review_categories = ['Product', 'Service', 'Price', 'Quality', 'Experience']
+    data['review_category'] = np.random.choice(review_categories, n_samples, p=[0.3, 0.3, 0.2, 0.1, 0.1])
     
     # Add review length
     data['review_length'] = np.random.randint(50, 500, n_samples)
@@ -118,7 +119,14 @@ def load_data() -> pd.DataFrame:
         return pd.DataFrame()
 
 # Initialize the Dash app with Bootstrap styling
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
+app = dash.Dash(__name__, 
+                external_stylesheets=[dbc.themes.DARKLY],
+                assets_folder='assets')  # Specify assets folder
+
+# Create assets folder if it doesn't exist
+assets_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
+if not os.path.exists(assets_folder):
+    os.makedirs(assets_folder)
 
 # Custom styles
 CARD_STYLE = {
@@ -142,6 +150,82 @@ COUNTER_BOX_STYLE = {
     'boxShadow': '0 4px 6px rgba(0, 0, 0, 0.2)'
 }
 
+# Add custom CSS for dropdowns
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <style>
+            /* Dark theme for dropdowns */
+            .Select-control {
+                background-color: #2d3436 !important;
+                border-color: #636e72 !important;
+            }
+            .Select-menu-outer {
+                background-color: #2d3436 !important;
+                border-color: #636e72 !important;
+            }
+            .Select-option {
+                background-color: #2d3436 !important;
+                color: white !important;
+            }
+            .Select-option:hover {
+                background-color: #636e72 !important;
+            }
+            .Select-value-label {
+                color: white !important;
+            }
+            .Select-placeholder {
+                color: #b2bec3 !important;
+            }
+            .Select--single > .Select-control .Select-value {
+                color: white !important;
+            }
+            .Select--multi .Select-value {
+                background-color: #636e72 !important;
+                border-color: #b2bec3 !important;
+                color: white !important;
+            }
+            .Select--multi .Select-value-icon {
+                border-color: #b2bec3 !important;
+                color: white !important;
+            }
+            .Select--multi .Select-value-icon:hover {
+                background-color: #b2bec3 !important;
+                color: #2d3436 !important;
+            }
+            .Select-arrow {
+                border-color: #b2bec3 transparent transparent !important;
+            }
+            .Select.is-open > .Select-control .Select-arrow {
+                border-color: transparent transparent #b2bec3 !important;
+            }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+'''
+
+# Function to encode image to base64
+def encode_image(image_path):
+    try:
+        with open(image_path, 'rb') as f:
+            encoded = base64.b64encode(f.read())
+        return f'data:image/png;base64,{encoded.decode()}'
+    except:
+        return None
+
 # Layout
 app.layout = dbc.Container([
     dcc.Store(id='page-load-trigger', data=0),
@@ -155,15 +239,17 @@ app.layout = dbc.Container([
                 dbc.CardBody([
                     dbc.Row([
                         dbc.Col([
-                            dbc.Label("Brand", className="text-light"),
+                            dbc.Label("Category", className="text-light"),
                             dcc.Dropdown(
-                                id='brand-filter',
+                                id='category-filter',
                                 options=[
-                                    {'label': 'All Brands', 'value': 'all'},
-                                    {'label': 'Brand A', 'value': 'Brand A'},
-                                    {'label': 'Brand B', 'value': 'Brand B'},
-                                    {'label': 'Brand C', 'value': 'Brand C'},
-                                    {'label': 'Brand D', 'value': 'Brand D'}
+                                    {'label': 'All Categories', 'value': 'all'},
+                                    {'label': 'Apple Products', 'value': 'Apple Products'},
+                                    {'label': 'Industrial & Scientific', 'value': 'Industrial & Scientific'},
+                                    {'label': 'All Beauty', 'value': 'All Beauty'},
+                                    {'label': 'Health & Personal Care', 'value': 'Health & Personal Care'},
+                                    {'label': 'Fire Phone', 'value': 'Fire Phone'},
+                                    {'label': 'Amazon Devices', 'value': 'Amazon Devices'}
                                 ],
                                 value='all',
                                 className="mb-3"
@@ -279,16 +365,17 @@ app.layout = dbc.Container([
                             dag.AgGrid(
                                 id='reviews-table',
                                 columnDefs=[
-                                    {"headerName": "Date", "field": "date", "sortable": True, "width": 120},
-                                    {"headerName": "Sentiment", "field": "sentiment", "sortable": True, "width": 120},
-                                    {"headerName": "Rating", "field": "rating", "sortable": True, "width": 100},
-                                    {"headerName": "Category", "field": "category", "sortable": True, "width": 120},
+                                    {"headerName": "Date", "field": "date", "sortable": True, "width": 100},
+                                    {"headerName": "Sentiment", "field": "sentiment", "sortable": True, "width": 100},
+                                    {"headerName": "Rating", "field": "rating", "sortable": True, "width": 80},
+                                    {"headerName": "Category", "field": "category", "sortable": True, "width": 150},
                                     {"headerName": "Source", "field": "source", "sortable": True, "width": 120},
                                     {
                                         "headerName": "Review",
                                         "field": "review_text",
                                         "sortable": True,
                                         "flex": 1,
+                                        "minWidth": 300,
                                         "autoHeight": True,
                                         "wrapText": True,
                                         "cellStyle": {
@@ -301,7 +388,7 @@ app.layout = dbc.Container([
                                     "resizable": True,
                                     "sortable": True,
                                     "filter": True,
-                                    "minWidth": 100
+                                    "minWidth": 80
                                 },
                                 dashGridOptions={
                                     "rowSelection": "single",
@@ -339,28 +426,32 @@ app.layout = dbc.Container([
                                 dbc.Col([
                                     dbc.Label("Select Brands to Compare", className="text-light"),
                                     dcc.Dropdown(
-                                        id='brand1-filter',
+                                        id='category1-filter',
                                         options=[
-                                            {'label': 'Brand A', 'value': 'Brand A'},
-                                            {'label': 'Brand B', 'value': 'Brand B'},
-                                            {'label': 'Brand C', 'value': 'Brand C'},
-                                            {'label': 'Brand D', 'value': 'Brand D'}
+                                            {'label': 'Apple Products', 'value': 'Apple Products'},
+                                            {'label': 'Industrial & Scientific', 'value': 'Industrial & Scientific'},
+                                            {'label': 'All Beauty', 'value': 'All Beauty'},
+                                            {'label': 'Health & Personal Care', 'value': 'Health & Personal Care'},
+                                            {'label': 'Fire Phone', 'value': 'Fire Phone'},
+                                            {'label': 'Amazon Devices', 'value': 'Amazon Devices'}
                                         ],
-                                        value='Brand A',
+                                        value='Category A',
                                         className="mb-3"
                                     )
                                 ], width=6),
                                 dbc.Col([
                                     dbc.Label(" ", className="text-light"),  # Empty label for alignment
                                     dcc.Dropdown(
-                                        id='brand2-filter',
+                                        id='category2-filter',
                                         options=[
-                                            {'label': 'Brand A', 'value': 'Brand A'},
-                                            {'label': 'Brand B', 'value': 'Brand B'},
-                                            {'label': 'Brand C', 'value': 'Brand C'},
-                                            {'label': 'Brand D', 'value': 'Brand D'}
+                                            {'label': 'Apple Products', 'value': 'Apple Products'},
+                                            {'label': 'Industrial & Scientific', 'value': 'Industrial & Scientific'},
+                                            {'label': 'All Beauty', 'value': 'All Beauty'},
+                                            {'label': 'Health & Personal Care', 'value': 'Health & Personal Care'},
+                                            {'label': 'Fire Phone', 'value': 'Fire Phone'},
+                                            {'label': 'Amazon Devices', 'value': 'Amazon Devices'}
                                         ],
-                                        value='Brand B',
+                                        value='Category B',
                                         className="mb-3"
                                     )
                                 ], width=6)
@@ -399,7 +490,7 @@ app.layout = dbc.Container([
     
 ], fluid=True, style={'backgroundColor': '#2d3436', 'minHeight': '100vh', 'padding': '20px'})  # Lighter background
 
-# Update the callback to remove date range inputs
+# Update the callback to remove image-related code
 @app.callback(
     Output('sentiment-donut', 'figure'),
     Output('brand-comparison-chart', 'figure'),
@@ -415,17 +506,17 @@ app.layout = dbc.Container([
     Output('total-reviews-counter', 'children'),
     Output('positive-reviews-counter', 'children'),
     Input('page-load-trigger', 'data'),
-    Input('brand-filter', 'value'),
+    Input('category-filter', 'value'),
     Input('sentiment-filter', 'value'),
-    Input('brand1-filter', 'value'),
-    Input('brand2-filter', 'value')
+    Input('category1-filter', 'value'),
+    Input('category2-filter', 'value')
 )
-def update_visuals(n_clicks, brand, sentiment_threshold, brand1, brand2):
+def update_visuals(n_clicks, category, sentiment_threshold, category1, category2):
     data = load_data()
     
     # Apply filters
-    if brand != 'all':
-        data = data[data['brand'] == brand]
+    if category != 'all':
+        data = data[data['category'] == category]
     
     # Filter by sentiment threshold
     sentiment_scores = data['rating'] * 20  # Convert 1-5 rating to 0-100 scale
@@ -466,29 +557,35 @@ def update_visuals(n_clicks, brand, sentiment_threshold, brand1, brand2):
         margin=dict(t=50, b=50, l=50, r=150)
     )
     
-    # Create brand comparison chart
+    # Create category comparison chart
     date_range = pd.date_range(end=pd.Timestamp.now(), periods=12, freq='M')
     
-    # Generate monthly review counts for selected brands
-    brand1_data = data[data['brand'] == brand1].groupby(data['date'].dt.to_period('M')).size()
-    brand2_data = data[data['brand'] == brand2].groupby(data['date'].dt.to_period('M')).size()
+    # Generate monthly review counts for selected categories
+    def get_monthly_counts(data, category):
+        # Convert dates to month-end and count reviews
+        monthly_data = data[data['category'] == category].copy()
+        monthly_data['month'] = monthly_data['date'].dt.to_period('M')
+        return monthly_data.groupby('month').size()
+    
+    category1_data = get_monthly_counts(data, category1)
+    category2_data = get_monthly_counts(data, category2)
     
     # Create the comparison chart
     comparison_fig = go.Figure()
     
-    # Add bars for brand 1
+    # Add bars for category 1
     comparison_fig.add_trace(go.Bar(
-        x=[str(d) for d in date_range],
-        y=[brand1_data.get(pd.Period(d, freq='M'), 0) for d in date_range],
-        name=brand1,
+        x=[d.strftime('%Y-%m') for d in date_range],
+        y=[category1_data.get(pd.Period(d, freq='M'), 0) for d in date_range],
+        name=category1,
         marker_color='#3498db'
     ))
     
-    # Add bars for brand 2
+    # Add bars for category 2
     comparison_fig.add_trace(go.Bar(
-        x=[str(d) for d in date_range],
-        y=[brand2_data.get(pd.Period(d, freq='M'), 0) for d in date_range],
-        name=brand2,
+        x=[d.strftime('%Y-%m') for d in date_range],
+        y=[category2_data.get(pd.Period(d, freq='M'), 0) for d in date_range],
+        name=category2,
         marker_color='#e74c3c'
     ))
     

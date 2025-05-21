@@ -7,5 +7,6 @@ databricks-sdk
 python-dotenv
 dash-ag-grid
 databricks-sdk[databricks-sql]
+databricks-sdk
 pyyaml
 wordcloud

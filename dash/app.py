@@ -11,12 +11,26 @@ import flask  # for request context
 import base64
 from wordcloud import WordCloud
 import io
-# from config import DATABRICKS_CONFIG, validate_config
-# from data_query import sql_query_with_service_principal, sql_query_with_user_token
+from databricks import sql
+from databricks.sdk.core import Config
 
-# Validate configuration
-# validate_config()
+# Ensure environment variable is set correctly
+assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
+def sqlQuery(query: str) -> pd.DataFrame:
+    """Execute a SQL query and return the result as a pandas DataFrame."""
+    cfg = Config()  # Pull environment variables for auth
+    with sql.connect(
+        server_hostname=cfg.host,
+        http_path=f"/sql/1.0/warehouses/{os.getenv('DATABRICKS_WAREHOUSE_ID')}",
+        credentials_provider=lambda: cfg.authenticate
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query)
+            return cursor.fetchall_arrow().to_pandas()
+
+
+# Generate Sample Data
 def generate_sample_data() -> pd.DataFrame:
     """Generate comprehensive sample category review data."""
     np.random.seed(42)
@@ -112,15 +126,41 @@ def generate_sample_data() -> pd.DataFrame:
     # Add resolution time (in hours)
     data['resolution_time'] = data['response_time'] + np.random.exponential(48, n_samples)
     
+    # Add brand column
+    brands_by_category = {
+        'Apple Products': ['iPhone', 'iPad', 'MacBook', 'Apple Watch'],
+        'Industrial & Scientific': ['Bosch', '3M', 'Honeywell', 'Siemens'],
+        'Health & Personal Care': ['Oral-B', 'Philips', 'Braun', 'Panasonic'],
+        'Amazon Devices': ['Echo', 'Fire TV', 'Kindle', 'Ring']
+    }
+    data['brand'] = data['category'].apply(lambda cat: np.random.choice(brands_by_category[cat]))
+    
     return data
 
-def load_data() -> pd.DataFrame:
+
+
+def load_dummy_data() -> pd.DataFrame:
     """Load sample data."""
     try:
         return generate_sample_data()
     except Exception as e:
         print(f"Data generation failed: {str(e)}")
         return pd.DataFrame()
+    
+
+
+# Fetch the data
+try:
+    # This example query depends on the nyctaxi data set in Unity Catalog, see https://docs.databricks.com/en/discover/databricks-datasets.html for details
+    data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights LIMIT 10000")
+    print(f"Data shape: {data.shape}")
+    print(f"Data columns: {data.columns}")
+except Exception as e:
+    print(f"An error occurred in querying data: {str(e)}")
+    data = pd.DataFrame()
+
+# Convert the date column to a datetime object
+data['date'] = pd.to_datetime(data['date'], errors='coerce')
 
 # Initialize the Dash app with Bootstrap styling
 app = dash.Dash(__name__, 
@@ -246,16 +286,20 @@ app.layout = dbc.Container([
                             dbc.Label("Category", className="text-light"),
                             dcc.Dropdown(
                                 id='category-filter',
-                                options=[
-                                    {'label': 'Apple Products', 'value': 'Apple Products'},
-                                    {'label': 'Industrial & Scientific', 'value': 'Industrial & Scientific'},
-                                    {'label': 'Health & Personal Care', 'value': 'Health & Personal Care'},
-                                    {'label': 'Amazon Devices', 'value': 'Amazon Devices'}
-                                ],
-                                value='Apple Products',
+                                options=[{'label': cat, 'value': cat} for cat in sorted(data['category'].unique())],
+                                value=data['category'].iloc[0],
                                 className="mb-3"
                             )
-                        ], width=6),
+                        ], width=4),
+        dbc.Col([
+                            dbc.Label("Brand", className="text-light"),
+                            dcc.Dropdown(
+                                id='brand-filter',
+                                options=[],  # Will be populated by callback
+                                value=None,  # Will be set by callback
+                                className="mb-3"
+                            )
+                        ], width=4),
                         dbc.Col([
                             dbc.Label("Minimum Sentiment Score", className="text-light"),
                             dcc.Slider(
@@ -274,7 +318,7 @@ app.layout = dbc.Container([
                                 className="mb-3"
                             ),
                             html.Div(id='sentiment-value', className="text-light text-center")
-                        ], width=6)
+                        ], width=4)
                     ])
                 ])
             ], style=CARD_STYLE)
@@ -496,6 +540,20 @@ app.layout = dbc.Container([
     
 ], fluid=True, style={'backgroundColor': '#2d3436', 'minHeight': '100vh', 'padding': '20px'})  # Lighter background
 
+# Update the callback to dynamically filter brands based on category
+@app.callback(
+    Output('brand-filter', 'options'),
+    Output('brand-filter', 'value'),
+    Input('category-filter', 'value')
+)
+def update_brand_options(selected_category):
+    filtered_data = data[data['category'] == selected_category]
+    brands = sorted(filtered_data['brand'].unique())
+    options = [{'label': brd, 'value': brd} for brd in brands]
+    value = brands[0] if brands else None
+    return options, value
+
+
 # Update the callback to remove image-related code
 @app.callback(
     Output('sentiment-donut', 'figure'),
@@ -514,19 +572,20 @@ app.layout = dbc.Container([
     Output('positive-reviews-counter', 'children'),
     Input('page-load-trigger', 'data'),
     Input('category-filter', 'value'),
+    Input('brand-filter', 'value'),
     Input('sentiment-filter', 'value'),
     Input('category1-filter', 'value'),
     Input('category2-filter', 'value')
 )
-def update_visuals(n_clicks, category, sentiment_threshold, category1, category2):
-    data = load_data()
+def update_visuals(n_clicks, category, brand, sentiment_threshold, category1, category2):
+    #data = load_dummy_data()
     
     # Apply filters
-    data = data[data['category'] == category]
-    
+    filtered_data = data[data['category'] == category]
+    filtered_data = filtered_data[filtered_data['brand'] == brand]
     # Filter by sentiment threshold
-    sentiment_scores = data['rating'] * 20  # Convert 1-5 rating to 0-100 scale
-    data = data[sentiment_scores >= sentiment_threshold]
+    sentiment_scores = filtered_data['rating'] * 20  # Convert 1-5 rating to 0-100 scale
+    filtered_data = filtered_data[sentiment_scores >= sentiment_threshold]
     
     # Generate word clouds
     def generate_wordcloud(texts, max_words=100):
@@ -550,14 +609,14 @@ def update_visuals(n_clicks, category, sentiment_threshold, category1, category2
         return f'data:image/png;base64,{base64.b64encode(img.getvalue()).decode()}'
     
     # Generate positive and negative word clouds
-    positive_reviews = data[data['sentiment'] == 'Positive']['review_text'].tolist()
-    negative_reviews = data[data['sentiment'] == 'Negative']['review_text'].tolist()
+    positive_reviews = filtered_data[filtered_data['sentiment'] == 'Positive']['review_text'].tolist()
+    negative_reviews = filtered_data[filtered_data['sentiment'] == 'Negative']['review_text'].tolist()
     
     positive_wordcloud = generate_wordcloud(positive_reviews)
     negative_wordcloud = generate_wordcloud(negative_reviews)
     
     # Create donut chart for sentiment distribution
-    sentiment_counts = data['sentiment'].value_counts()
+    sentiment_counts = filtered_data['sentiment'].value_counts()
     donut_fig = go.Figure(data=[go.Pie(
         labels=sentiment_counts.index,
         values=sentiment_counts.values,
@@ -599,7 +658,7 @@ def update_visuals(n_clicks, category, sentiment_threshold, category1, category2
     # Generate monthly review counts for selected categories
     def get_monthly_counts(data, category):
         # Filter data for the specific category
-        category_data = data[data['category'] == category].copy()
+        category_data = filtered_data[filtered_data['category'] == category].copy()
         
         # Convert dates to month and count reviews
         category_data['month'] = category_data['date'].dt.to_period('M')
@@ -611,8 +670,8 @@ def update_visuals(n_clicks, category, sentiment_threshold, category1, category2
         return full_counts
     
     # Get data for both categories
-    category1_data = get_monthly_counts(data, category1)
-    category2_data = get_monthly_counts(data, category2)
+    category1_data = get_monthly_counts(filtered_data, category1)
+    category2_data = get_monthly_counts(filtered_data, category2)
     
     # Create the comparison chart
     comparison_fig = go.Figure()
@@ -669,15 +728,15 @@ def update_visuals(n_clicks, category, sentiment_threshold, category1, category2
     )
     
     # Calculate key metrics
-    total_reviews = len(data)
-    positive_reviews = len(data[data['sentiment'] == 'Positive'])
-    positive_pct = (data['sentiment'] == 'Positive').mean() * 100
-    avg_rating = data['rating'].mean()
+    total_reviews = len(filtered_data)
+    positive_reviews = len(filtered_data[filtered_data['sentiment'] == 'Positive'])
+    positive_pct = (filtered_data['sentiment'] == 'Positive').mean() * 100
+    avg_rating = filtered_data['rating'].mean()
     response_rate = np.random.uniform(85, 95)  # Simulated response rate
     resolution_time = np.random.uniform(2, 4)  # Simulated average resolution time in hours
     
     # Get last 5 reviews for the table
-    recent_reviews = data.sort_values('date', ascending=False).head(5)
+    recent_reviews = filtered_data.sort_values('date', ascending=False).head(5)
     
     metrics = [
         html.H4(f"Total Reviews: {total_reviews:,}", style={'color': 'white'}),
@@ -688,7 +747,7 @@ def update_visuals(n_clicks, category, sentiment_threshold, category1, category2
     ]
     
     # Calculate brand health scores
-    brand_health = (data['sentiment'] == 'Positive').mean() * 100
+    brand_health = (filtered_data['sentiment'] == 'Positive').mean() * 100
     competitive_position = np.random.uniform(75, 95)  # Simulated competitive position
     product_score = np.random.uniform(80, 98)  # Simulated product score
     

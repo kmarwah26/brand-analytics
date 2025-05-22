@@ -152,7 +152,7 @@ def load_dummy_data() -> pd.DataFrame:
 # Fetch the data
 try:
     # This example query depends on the nyctaxi data set in Unity Catalog, see https://docs.databricks.com/en/discover/databricks-datasets.html for details
-    data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights LIMIT 10000")
+    data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights")
     print(f"Data shape: {data.shape}")
     print(f"Data columns: {data.columns}")
 except Exception as e:

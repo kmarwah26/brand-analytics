@@ -414,7 +414,6 @@ app.layout = dbc.Container([
                                     {"headerName": "Sentiment", "field": "sentiment", "sortable": True, "width": 100},
                                     {"headerName": "Rating", "field": "rating", "sortable": True, "width": 80},
                                     {"headerName": "Category", "field": "category", "sortable": True, "width": 150},
-                                    {"headerName": "Source", "field": "source", "sortable": True, "width": 120},
                                     {
                                         "headerName": "Review",
                                         "field": "review_text",
@@ -461,48 +460,6 @@ app.layout = dbc.Container([
         
         # Competitive Positioning Tab
         dbc.Tab([
-            # Brand Comparison Section
-            dbc.Row([
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader("Brand Comparison", style=CARD_HEADER_STYLE),
-                        dbc.CardBody([
-                            dbc.Row([
-                                dbc.Col([
-                                    dbc.Label("Select Brands to Compare", className="text-light"),
-                                    dcc.Dropdown(
-                                        id='category1-filter',
-                                        options=[
-                                            {'label': 'Apple Products', 'value': 'Apple Products'},
-                                            {'label': 'Industrial & Scientific', 'value': 'Industrial & Scientific'},
-                                            {'label': 'Health & Personal Care', 'value': 'Health & Personal Care'},
-                                            {'label': 'Amazon Devices', 'value': 'Amazon Devices'}
-                                        ],
-                                        value='Apple Products',
-                                        className="mb-3"
-                                    )
-                                ], width=6),
-                                dbc.Col([
-                                    dbc.Label(" ", className="text-light"),  # Empty label for alignment
-                                    dcc.Dropdown(
-                                        id='category2-filter',
-                                        options=[
-                                            {'label': 'Apple Products', 'value': 'Apple Products'},
-                                            {'label': 'Industrial & Scientific', 'value': 'Industrial & Scientific'},
-                                            {'label': 'Health & Personal Care', 'value': 'Health & Personal Care'},
-                                            {'label': 'Amazon Devices', 'value': 'Amazon Devices'}
-                                        ],
-                                        value='Apple Products',
-                                        className="mb-3"
-                                    )
-                                ], width=6)
-                            ]),
-                            dcc.Graph(id='brand-comparison-chart', style={'height': '400px'})
-                        ])
-                    ], style=CARD_STYLE)
-                ], width=12)
-            ], className="mb-4"),
-            
             # Existing Market Share Trends
             dbc.Row([
                 dbc.Col([
@@ -510,6 +467,18 @@ app.layout = dbc.Container([
                         dbc.CardHeader("Market Share Trends", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
                             dcc.Graph(id='market-share-trend', style={'height': '400px'})
+                        ])
+                    ], style=CARD_STYLE)
+                ], width=12)
+            ], className="mb-4"),
+
+            # Pricing comparison
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("Pricing Comparison", style=CARD_HEADER_STYLE),
+                        dbc.CardBody([
+                            dcc.Graph(id='pricing-comparison', style={'height': '400px'})
                         ])
                     ], style=CARD_STYLE)
                 ], width=12)
@@ -557,13 +526,13 @@ def update_brand_options(selected_category):
 # Update the callback to remove image-related code
 @app.callback(
     Output('sentiment-donut', 'figure'),
-    Output('brand-comparison-chart', 'figure'),
     Output('reviews-table', 'rowData'),
     Output('metrics-container', 'children'),
     Output('brand-health-score', 'children'),
     Output('competitive-score', 'children'),
     Output('product-score', 'children'),
     Output('market-share-trend', 'figure'),
+    Output('pricing-comparison', 'figure'),
     Output('positive-wordcloud', 'src'),
     Output('negative-wordcloud', 'src'),
     Output('attribute-analysis', 'figure'),
@@ -573,16 +542,14 @@ def update_brand_options(selected_category):
     Input('page-load-trigger', 'data'),
     Input('category-filter', 'value'),
     Input('brand-filter', 'value'),
-    Input('sentiment-filter', 'value'),
-    Input('category1-filter', 'value'),
-    Input('category2-filter', 'value')
+    Input('sentiment-filter', 'value')
 )
-def update_visuals(n_clicks, category, brand, sentiment_threshold, category1, category2):
+def update_visuals(n_clicks, category, brand, sentiment_threshold):
     #data = load_dummy_data()
     
     # Apply filters
-    filtered_data = data[data['category'] == category]
-    filtered_data = filtered_data[filtered_data['brand'] == brand]
+    category_data = data[data['category'] == category]
+    filtered_data = category_data[category_data['brand'] == brand]
     # Filter by sentiment threshold
     sentiment_scores = filtered_data['rating'] * 20  # Convert 1-5 rating to 0-100 scale
     filtered_data = filtered_data[sentiment_scores >= sentiment_threshold]
@@ -650,100 +617,87 @@ def update_visuals(n_clicks, category, brand, sentiment_threshold, category1, ca
         margin=dict(t=50, b=50, l=50, r=150)
     )
     
-    # Create category comparison chart
-    end_date = pd.Timestamp.now()
-    start_date = end_date - pd.DateOffset(months=12)
-    date_range = pd.date_range(start=start_date, end=end_date, freq='M')
-    
-    # Generate monthly review counts for selected categories
-    def get_monthly_counts(data, category):
-        # Filter data for the specific category
-        category_data = filtered_data[filtered_data['category'] == category].copy()
-        
-        # Convert dates to month and count reviews
-        category_data['month'] = category_data['date'].dt.to_period('M')
-        monthly_counts = category_data.groupby('month').size()
-        
-        # Create a series with all months, filling missing months with 0
-        full_counts = pd.Series(0, index=date_range.to_period('M'))
-        full_counts.update(monthly_counts)
-        return full_counts
-    
-    # Get data for both categories
-    category1_data = get_monthly_counts(filtered_data, category1)
-    category2_data = get_monthly_counts(filtered_data, category2)
-    
-    # Create the comparison chart
-    comparison_fig = go.Figure()
-    
-    # Add bars for category 1
-    comparison_fig.add_trace(go.Bar(
-        x=[d.strftime('%Y-%m') for d in date_range],
-        y=category1_data.values,
-        name=category1,
-        marker_color='#3498db',
-        opacity=0.8
-    ))
-    
-    # Add bars for category 2
-    comparison_fig.add_trace(go.Bar(
-        x=[d.strftime('%Y-%m') for d in date_range],
-        y=category2_data.values,
-        name=category2,
-        marker_color='#e74c3c',
-        opacity=0.8
-    ))
-    
-    comparison_fig.update_layout(
-        title='Monthly Review Comparison',
-        barmode='stack',  # Changed to stacked bars
+    # Create market share trend with monthly review counts
+    # Group by month and count reviews
+    monthly_counts = filtered_data.groupby(filtered_data['date'].dt.to_period('M')).size().reset_index(name='review_count')
+    monthly_counts['date'] = monthly_counts['date'].dt.to_timestamp()
+
+    # Create the line plot
+    market_share_fig = px.line(
+        monthly_counts,
+        x='date',
+        y='review_count',
+        title='Market Share'
+    )
+    market_share_fig.update_layout(
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
         font=dict(color='white'),
-        xaxis=dict(
-            title='Month',
-            gridcolor='#404040',
-            tickangle=45
-        ),
-        yaxis=dict(
-            title='Number of Reviews',
-            gridcolor='#404040'
-        ),
+        xaxis=dict(gridcolor='#404040'),
+        yaxis=dict(gridcolor='#404040')
+    )
+
+    # Create price analysis chart
+    price_fig = go.Figure()
+
+    brands = category_data['brand'].unique()
+    # Assign colors: orange for selected, blue for others
+    colors = ['#FFA500' if b == brand else '#3498db' for b in brands]
+    
+    # Add bar chart for brand prices
+    price_fig.add_trace(go.Bar(
+        x=brands,
+        y=category_data.groupby('brand')['avg_brand_price'].mean(),
+        name='Brand Average Price',
+        marker_color=colors
+    ))
+    
+    # Add line for category average
+    category_avg = category_data['avg_brand_price'].mean()
+    price_fig.add_trace(go.Scatter(
+        x=category_data['brand'].unique(),
+        y=[category_avg] * len(category_data['brand'].unique()),
+        name='Category Average',
+        line=dict(color='#e74c3c', width=2, dash='dash'),
+        mode='lines'
+    ))
+    
+    price_fig.update_layout(
+        title='Brand Price Comparison',
+        xaxis_title='Brand',
+        yaxis_title='Average Price',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white'),
+        xaxis=dict(gridcolor='#404040'),
+        yaxis=dict(gridcolor='#404040'),
         legend=dict(
             orientation="h",
             yanchor="bottom",
             y=1.02,
-            xanchor="center",
-            x=0.5
-        ),
-        hovermode='x unified'  # Added unified hover mode
+            xanchor="right",
+            x=1,
+            font=dict(size=12, color='white'),
+            bgcolor='rgba(0,0,0,0)',
+            bordercolor='rgba(0,0,0,0)'
+        )
     )
-    
-    # Add hover template
-    comparison_fig.update_traces(
-        hovertemplate="<b>%{x}</b><br>" +
-                     "Category: %{fullData.name}<br>" +
-                     "Reviews: %{y}<br>" +
-                     "<extra></extra>"
-    )
-    
+
     # Calculate key metrics
     total_reviews = len(filtered_data)
     positive_reviews = len(filtered_data[filtered_data['sentiment'] == 'Positive'])
     positive_pct = (filtered_data['sentiment'] == 'Positive').mean() * 100
     avg_rating = filtered_data['rating'].mean()
-    response_rate = np.random.uniform(85, 95)  # Simulated response rate
-    resolution_time = np.random.uniform(2, 4)  # Simulated average resolution time in hours
+    avg_sentiment_score = filtered_data['sentiment_score'].mean()
     
     # Get last 5 reviews for the table
-    recent_reviews = filtered_data.sort_values('date', ascending=False).head(5)
+    recent_reviews = filtered_data.sort_values('date', ascending=False).head(8)
     
     metrics = [
         html.H4(f"Total Reviews: {total_reviews:,}", style={'color': 'white'}),
         html.H4(f"Positive Sentiment: {positive_pct:.1f}%", style={'color': 'white'}),
         html.H4(f"Average Rating: {avg_rating:.1f}/5.0", style={'color': 'white'}),
-        html.H4(f"Response Rate: {response_rate:.1f}%", style={'color': 'white'}),
-        html.H4(f"Avg. Resolution Time: {resolution_time:.1f} hours", style={'color': 'white'})
+        html.H4(f"Average Sentiment Score: {avg_sentiment_score:.1f}/5.0", style={'color': 'white'})
     ]
     
     # Calculate brand health scores
@@ -756,25 +710,6 @@ def update_visuals(n_clicks, category, brand, sentiment_threshold, category1, ca
     competitive_score = f"{competitive_position:.1f}%"
     product_score = f"{product_score:.1f}%"
     
-    # Create market share trend
-    dates = pd.date_range(end=pd.Timestamp.now(), periods=30, freq='D')
-    market_share = pd.DataFrame({
-        'date': dates,
-        'market_share': np.random.uniform(20, 30, len(dates))
-    })
-    market_share_fig = px.line(
-        market_share,
-        x='date',
-        y='market_share',
-        title='Market Share Trend'
-    )
-    market_share_fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white'),
-        xaxis=dict(gridcolor='#404040'),
-        yaxis=dict(gridcolor='#404040')
-    )
     
     # Create attribute analysis
     attributes = ['Quality', 'Price', 'Service', 'Innovation', 'Design']
@@ -806,13 +741,13 @@ def update_visuals(n_clicks, category, brand, sentiment_threshold, category1, ca
     
     return (
         donut_fig,
-        comparison_fig,
         recent_reviews.to_dict('records'),
         metrics,
         brand_health_score,
         competitive_score,
         product_score,
         market_share_fig,
+        price_fig,
         positive_wordcloud,
         negative_wordcloud,
         attribute_fig,

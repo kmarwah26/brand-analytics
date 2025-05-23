@@ -11,156 +11,40 @@ import flask  # for request context
 import base64
 from wordcloud import WordCloud
 import io
-from databricks import sql
-from databricks.sdk.core import Config
 
 # Ensure environment variable is set correctly
 assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
-def sqlQuery(query: str) -> pd.DataFrame:
-    """Execute a SQL query and return the result as a pandas DataFrame."""
-    cfg = Config()  # Pull environment variables for auth
-    with sql.connect(
-        server_hostname=cfg.host,
-        http_path=f"/sql/1.0/warehouses/{os.getenv('DATABRICKS_WAREHOUSE_ID')}",
-        credentials_provider=lambda: cfg.authenticate
-    ) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(query)
-            return cursor.fetchall_arrow().to_pandas()
+# def sqlQuery(query: str) -> pd.DataFrame:
+#     """Execute a SQL query and return the result as a pandas DataFrame."""
+#     cfg = Config()  # Pull environment variables for auth
+#     with sql.connect(
+#         server_hostname=cfg.host,
+#         http_path=f"/sql/1.0/warehouses/{os.getenv('DATABRICKS_WAREHOUSE_ID')}",
+#         credentials_provider=lambda: cfg.authenticate
+#     ) as connection:
+#         with connection.cursor() as cursor:
+#             cursor.execute(query)
+#             return cursor.fetchall_arrow().to_pandas()
 
-
-# Generate Sample Data
-def generate_sample_data() -> pd.DataFrame:
-    """Generate comprehensive sample category review data."""
-    np.random.seed(42)
-    n_samples = 2000  # Increased sample size
-    
-    # Generate dates for the past year with more recent dates having higher frequency
-    end_date = pd.Timestamp.now()
-    start_date = end_date - pd.DateOffset(months=12)
-    dates = pd.date_range(start=start_date, end=end_date, freq='D')
-    
-    # Generate categories with different characteristics
-    categories = ['Apple Products', 'Industrial & Scientific', 'Health & Personal Care', 'Amazon Devices']
-    category_weights = [0.4, 0.3, 0.2, 0.1]  # Weights sum to 1.0
-    
-    # Generate random data with more realistic patterns
-    data = pd.DataFrame({
-        'date': np.random.choice(dates, n_samples),
-        'category': np.random.choice(categories, n_samples, p=category_weights),
-        'source': np.random.choice(['Website', 'Social Media', 'App Store', 'Email'], n_samples, p=[0.4, 0.3, 0.2, 0.1]),
-        'rating': np.random.randint(1, 6, n_samples),
-        'review_text': [
-            f"Sample review text {i} about the category experience and product quality."
-            for i in range(n_samples)
-        ]
-    })
-    
-    # Add sentiment based on rating with some randomness
-    def get_sentiment(rating):
-        if rating >= 4:
-            return np.random.choice(['Positive', 'Positive', 'Positive', 'Neutral'], p=[0.8, 0.1, 0.05, 0.05])
-        elif rating <= 2:
-            return np.random.choice(['Negative', 'Negative', 'Negative', 'Neutral'], p=[0.8, 0.1, 0.05, 0.05])
-        else:
-            return np.random.choice(['Neutral', 'Positive', 'Negative'], p=[0.6, 0.2, 0.2])
-    
-    data['sentiment'] = data['rating'].apply(get_sentiment)
-    
-    # Add product attributes
-    attributes = ['Quality', 'Price', 'Service', 'Innovation', 'Design']
-    for attr in attributes:
-        data[f'{attr.lower()}_score'] = np.random.uniform(1, 10, n_samples)
-    
-    # Add market share data
-    data['market_share'] = np.random.uniform(15, 35, n_samples)
-    
-    # Add competitive metrics
-    data['competitive_position'] = np.random.uniform(60, 95, n_samples)
-    
-    # Add time-based patterns
-    data['month'] = data['date'].dt.month
-    data['quarter'] = data['date'].dt.quarter
-    
-    # Add seasonal patterns
-    def add_seasonal_pattern(row):
-        month = row['month']
-        if month in [12, 1, 2]:  # Winter
-            return row['rating'] * 1.1
-        elif month in [3, 4, 5]:  # Spring
-            return row['rating'] * 1.05
-        elif month in [6, 7, 8]:  # Summer
-            return row['rating'] * 0.95
-        else:  # Fall
-            return row['rating'] * 1.0
-    
-    data['seasonal_rating'] = data.apply(add_seasonal_pattern, axis=1)
-    
-    # Add category-specific patterns
-    category_patterns = {
-        'Apple Products': {'rating_boost': 1.2, 'sentiment_boost': 0.9},
-        'Industrial & Scientific': {'rating_boost': 1.1, 'sentiment_boost': 0.8},
-        'Health & Personal Care': {'rating_boost': 0.9, 'sentiment_boost': 0.7},
-        'Amazon Devices': {'rating_boost': 0.8, 'sentiment_boost': 0.6}
-    }
-    
-    for category, pattern in category_patterns.items():
-        mask = data['category'] == category
-        data.loc[mask, 'rating'] = data.loc[mask, 'rating'] * pattern['rating_boost']
-        data.loc[mask, 'market_share'] = data.loc[mask, 'market_share'] * pattern['sentiment_boost']
-    
-    # Ensure ratings stay within 1-5 range
-    data['rating'] = data['rating'].clip(1, 5)
-    
-    # Add review categories
-    review_categories = ['Product', 'Service', 'Price', 'Quality', 'Experience']
-    data['review_category'] = np.random.choice(review_categories, n_samples, p=[0.3, 0.3, 0.2, 0.1, 0.1])
-    
-    # Add review length
-    data['review_length'] = np.random.randint(50, 500, n_samples)
-    
-    # Add response time (in hours)
-    data['response_time'] = np.random.exponential(24, n_samples)  # Mean response time of 24 hours
-    
-    # Add resolution time (in hours)
-    data['resolution_time'] = data['response_time'] + np.random.exponential(48, n_samples)
-    
-    # Add brand column
-    brands_by_category = {
-        'Apple Products': ['iPhone', 'iPad', 'MacBook', 'Apple Watch'],
-        'Industrial & Scientific': ['Bosch', '3M', 'Honeywell', 'Siemens'],
-        'Health & Personal Care': ['Oral-B', 'Philips', 'Braun', 'Panasonic'],
-        'Amazon Devices': ['Echo', 'Fire TV', 'Kindle', 'Ring']
-    }
-    data['brand'] = data['category'].apply(lambda cat: np.random.choice(brands_by_category[cat]))
-    
-    return data
-
-
-
-def load_dummy_data() -> pd.DataFrame:
-    """Load sample data."""
-    try:
-        return generate_sample_data()
-    except Exception as e:
-        print(f"Data generation failed: {str(e)}")
-        return pd.DataFrame()
-    
-
-
-# Fetch the data
+# Load data from CSV
 try:
-    # This example query depends on the nyctaxi data set in Unity Catalog, see https://docs.databricks.com/en/discover/databricks-datasets.html for details
-    data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights")
+    data = pd.read_csv('app_data/brand_insights_data.csv')
     print(f"Data shape: {data.shape}")
     print(f"Data columns: {data.columns}")
+    
+    # Convert the date column to a datetime object
+    data['date'] = pd.to_datetime(data['date'], errors='coerce')
+    
+    # Ensure required columns exist
+    required_columns = ['date', 'category', 'brand', 'product', 'rating', 'review_text', 'sentiment', 'sentiment_score', 'positive_feature_list', 'negative_feature_list', 'avg_brand_price']
+    missing_columns = [col for col in required_columns if col not in data.columns]
+    if missing_columns:
+        raise ValueError(f"Missing required columns: {missing_columns}")
+        
 except Exception as e:
-    print(f"An error occurred in querying data: {str(e)}")
+    print(f"An error occurred loading data: {str(e)}")
     data = pd.DataFrame()
-
-# Convert the date column to a datetime object
-data['date'] = pd.to_datetime(data['date'], errors='coerce')
 
 # Initialize the Dash app with Bootstrap styling
 app = dash.Dash(__name__, 
@@ -281,8 +165,8 @@ app.layout = dbc.Container([
             dbc.Card([
                 dbc.CardHeader("Filters", style=CARD_HEADER_STYLE),
                 dbc.CardBody([
-    dbc.Row([
-        dbc.Col([
+                    dbc.Row([
+                        dbc.Col([
                             dbc.Label("Category", className="text-light"),
                             dcc.Dropdown(
                                 id='category-filter',
@@ -290,8 +174,8 @@ app.layout = dbc.Container([
                                 value=data['category'].iloc[0],
                                 className="mb-3"
                             )
-                        ], width=4),
-        dbc.Col([
+                        ], width=6),
+                        dbc.Col([
                             dbc.Label("Brand", className="text-light"),
                             dcc.Dropdown(
                                 id='brand-filter',
@@ -299,26 +183,7 @@ app.layout = dbc.Container([
                                 value=None,  # Will be set by callback
                                 className="mb-3"
                             )
-                        ], width=4),
-                        dbc.Col([
-                            dbc.Label("Minimum Sentiment Score", className="text-light"),
-                            dcc.Slider(
-                                id='sentiment-filter',
-                                min=0,
-                                max=100,
-                                step=1,
-                                value=0,
-                                marks={
-                                    0: '0%',
-                                    25: '25%',
-                                    50: '50%',
-                                    75: '75%',
-                                    100: '100%'
-                                },
-                                className="mb-3"
-                            ),
-                            html.Div(id='sentiment-value', className="text-light text-center")
-                        ], width=4)
+                        ], width=6)
                     ])
                 ])
             ], style=CARD_STYLE)
@@ -364,14 +229,6 @@ app.layout = dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Sentiment Distribution", style=CARD_HEADER_STYLE),
-                        dbc.CardBody([
-                            dcc.Graph(id='sentiment-donut', style={'height': '300px'})
-                        ])
-                    ], style=CARD_STYLE)
-                ], width=6),
-                dbc.Col([
-                    dbc.Card([
                         dbc.CardHeader("Key Metrics", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
                             # Add counters row
@@ -396,7 +253,19 @@ app.layout = dbc.Container([
                             html.Div(id='metrics-container', className="d-flex flex-column gap-3 text-light")
                         ])
                     ], style=CARD_STYLE)
-                ], width=6)
+                ], width=12)
+            ], className="mb-4"),
+            
+            # Sentiment Analysis Row
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("Sentiment Analysis", style=CARD_HEADER_STYLE),
+                        dbc.CardBody([
+                            dcc.Graph(id='sentiment-treemap', style={'height': '400px'})
+                        ])
+                    ], style=CARD_STYLE)
+                ], width=12)
             ], className="mb-4")
         ], label="Brand Health", tab_id="tab-brand-health"),
         
@@ -449,9 +318,18 @@ app.layout = dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Attribute Analysis", style=CARD_HEADER_STYLE),
+                        dbc.CardHeader("Brand Review Attributes", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
-                            dcc.Graph(id='attribute-analysis', style={'height': '400px'})
+                            dbc.Row([
+                                dbc.Col([
+                                    html.H4("Positive", className="text-center mb-3"),
+                                    html.Img(id='brand-positive-wordcloud', style={'width': '100%', 'height': 'auto'})
+                                ], width=6),
+                                dbc.Col([
+                                    html.H4("Negative", className="text-center mb-3"),
+                                    html.Img(id='brand-negative-wordcloud', style={'width': '100%', 'height': 'auto'})
+                                ], width=6)
+                            ])
                         ])
                     ], style=CARD_STYLE)
                 ], width=12)
@@ -464,7 +342,7 @@ app.layout = dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Market Share Trends", style=CARD_HEADER_STYLE),
+                        dbc.CardHeader("Share of Voice", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
                             dcc.Graph(id='market-share-trend', style={'height': '400px'})
                         ])
@@ -488,15 +366,15 @@ app.layout = dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Competitive Analysis", style=CARD_HEADER_STYLE),
+                        dbc.CardHeader("Category Review Attributes", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
                             dbc.Row([
                                 dbc.Col([
-                                    html.H4("Positive Feedback Word Cloud", className="text-center mb-3"),
+                                    html.H4("Positive", className="text-center mb-3"),
                                     html.Img(id='positive-wordcloud', style={'width': '100%', 'height': 'auto'})
                                 ], width=6),
                                 dbc.Col([
-                                    html.H4("Negative Feedback Word Cloud", className="text-center mb-3"),
+                                    html.H4("Negative", className="text-center mb-3"),
                                     html.Img(id='negative-wordcloud', style={'width': '100%', 'height': 'auto'})
                                 ], width=6)
                             ])
@@ -523,9 +401,9 @@ def update_brand_options(selected_category):
     return options, value
 
 
-# Update the callback to remove image-related code
+# Update the callback with better error handling and data validation
 @app.callback(
-    Output('sentiment-donut', 'figure'),
+    Output('sentiment-treemap', 'figure'),
     Output('reviews-table', 'rowData'),
     Output('metrics-container', 'children'),
     Output('brand-health-score', 'children'),
@@ -535,226 +413,321 @@ def update_brand_options(selected_category):
     Output('pricing-comparison', 'figure'),
     Output('positive-wordcloud', 'src'),
     Output('negative-wordcloud', 'src'),
-    Output('attribute-analysis', 'figure'),
-    Output('sentiment-value', 'children'),
+    Output('brand-positive-wordcloud', 'src'),
+    Output('brand-negative-wordcloud', 'src'),
     Output('total-reviews-counter', 'children'),
     Output('positive-reviews-counter', 'children'),
     Input('page-load-trigger', 'data'),
     Input('category-filter', 'value'),
-    Input('brand-filter', 'value'),
-    Input('sentiment-filter', 'value')
+    Input('brand-filter', 'value')
 )
-def update_visuals(n_clicks, category, brand, sentiment_threshold):
-    #data = load_dummy_data()
-    
-    # Apply filters
-    category_data = data[data['category'] == category]
-    filtered_data = category_data[category_data['brand'] == brand]
-    # Filter by sentiment threshold
-    sentiment_scores = filtered_data['rating'] * 20  # Convert 1-5 rating to 0-100 scale
-    filtered_data = filtered_data[sentiment_scores >= sentiment_threshold]
-    
-    # Generate word clouds
-    def generate_wordcloud(texts, max_words=100):
-        if not texts:
-            return None
-        text = ' '.join(texts)
-        wordcloud = WordCloud(
-            width=800,
-            height=400,
-            background_color='#2d3436',
-            colormap='viridis',
-            max_words=max_words,
-            contour_width=1,
-            contour_color='#636e72'
-        ).generate(text)
-        
-        # Convert to base64 for display
-        img = io.BytesIO()
-        wordcloud.to_image().save(img, format='PNG')
-        img.seek(0)
-        return f'data:image/png;base64,{base64.b64encode(img.getvalue()).decode()}'
-    
-    # Generate positive and negative word clouds
-    positive_reviews = filtered_data[filtered_data['sentiment'] == 'Positive']['review_text'].tolist()
-    negative_reviews = filtered_data[filtered_data['sentiment'] == 'Negative']['review_text'].tolist()
-    
-    positive_wordcloud = generate_wordcloud(positive_reviews)
-    negative_wordcloud = generate_wordcloud(negative_reviews)
-    
-    # Create donut chart for sentiment distribution
-    sentiment_counts = filtered_data['sentiment'].value_counts()
-    donut_fig = go.Figure(data=[go.Pie(
-        labels=sentiment_counts.index,
-        values=sentiment_counts.values,
-        hole=.6,
-        marker_colors=['#2ecc71', '#e74c3c', '#95a5a6'],
-        textinfo='percent+label',
-        textposition='outside',
-        pull=[0.05, 0, 0]
-    )])
-    donut_fig.update_layout(
-        showlegend=True,
-        legend=dict(
-            orientation="v",
-            yanchor="middle",
-            y=0.5,
-            xanchor="right",
-            x=1.2,
-            font=dict(size=14, color='white'),
-            bgcolor='rgba(0,0,0,0)',
-            bordercolor='rgba(0,0,0,0)'
-        ),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white'),
-        title=dict(
-            text="Sentiment Distribution",
-            font=dict(size=20, color='white'),
-            x=0.5,
-            y=0.95
-        ),
-        margin=dict(t=50, b=50, l=50, r=150)
-    )
-    
-    # Create market share trend with monthly review counts
-    # Group by month and count reviews
-    monthly_counts = filtered_data.groupby(filtered_data['date'].dt.to_period('M')).size().reset_index(name='review_count')
-    monthly_counts['date'] = monthly_counts['date'].dt.to_timestamp()
-
-    # Create the line plot
-    market_share_fig = px.line(
-        monthly_counts,
-        x='date',
-        y='review_count',
-        title='Market Share'
-    )
-    market_share_fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white'),
-        xaxis=dict(gridcolor='#404040'),
-        yaxis=dict(gridcolor='#404040')
-    )
-
-    # Create price analysis chart
-    price_fig = go.Figure()
-
-    brands = category_data['brand'].unique()
-    # Assign colors: orange for selected, blue for others
-    colors = ['#FFA500' if b == brand else '#3498db' for b in brands]
-    
-    # Add bar chart for brand prices
-    price_fig.add_trace(go.Bar(
-        x=brands,
-        y=category_data.groupby('brand')['avg_brand_price'].mean(),
-        name='Brand Average Price',
-        marker_color=colors
-    ))
-    
-    # Add line for category average
-    category_avg = category_data['avg_brand_price'].mean()
-    price_fig.add_trace(go.Scatter(
-        x=category_data['brand'].unique(),
-        y=[category_avg] * len(category_data['brand'].unique()),
-        name='Category Average',
-        line=dict(color='#e74c3c', width=2, dash='dash'),
-        mode='lines'
-    ))
-    
-    price_fig.update_layout(
-        title='Brand Price Comparison',
-        xaxis_title='Brand',
-        yaxis_title='Average Price',
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white'),
-        xaxis=dict(gridcolor='#404040'),
-        yaxis=dict(gridcolor='#404040'),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            font=dict(size=12, color='white'),
-            bgcolor='rgba(0,0,0,0)',
-            bordercolor='rgba(0,0,0,0)'
+def update_visuals(n_clicks, category, brand):
+    # Create empty figure template
+    def create_empty_fig():
+        fig = go.Figure()
+        fig.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='white')
         )
-    )
+        return fig
 
-    # Calculate key metrics
-    total_reviews = len(filtered_data)
-    positive_reviews = len(filtered_data[filtered_data['sentiment'] == 'Positive'])
-    positive_pct = (filtered_data['sentiment'] == 'Positive').mean() * 100
-    avg_rating = filtered_data['rating'].mean()
-    avg_sentiment_score = filtered_data['sentiment_score'].mean()
-    
-    # Get last 5 reviews for the table
-    recent_reviews = filtered_data.sort_values('date', ascending=False).head(8)
-    
-    metrics = [
-        html.H4(f"Total Reviews: {total_reviews:,}", style={'color': 'white'}),
-        html.H4(f"Positive Sentiment: {positive_pct:.1f}%", style={'color': 'white'}),
-        html.H4(f"Average Rating: {avg_rating:.1f}/5.0", style={'color': 'white'}),
-        html.H4(f"Average Sentiment Score: {avg_sentiment_score:.1f}/5.0", style={'color': 'white'})
-    ]
-    
-    # Calculate brand health scores
-    brand_health = (filtered_data['sentiment'] == 'Positive').mean() * 100
-    competitive_position = np.random.uniform(75, 95)  # Simulated competitive position
-    product_score = np.random.uniform(80, 98)  # Simulated product score
-    
-    # Format the scores
-    brand_health_score = f"{brand_health:.1f}%"
-    competitive_score = f"{competitive_position:.1f}%"
-    product_score = f"{product_score:.1f}%"
-    
-    
-    # Create attribute analysis
-    attributes = ['Quality', 'Price', 'Service', 'Innovation', 'Design']
-    importance = np.random.uniform(0.7, 1.0, len(attributes))
-    satisfaction = np.random.uniform(0.6, 0.9, len(attributes))
-    
-    attribute_fig = go.Figure()
-    attribute_fig.add_trace(go.Bar(
-        x=attributes,
-        y=importance,
-        name='Importance'
-    ))
-    attribute_fig.add_trace(go.Bar(
-        x=attributes,
-        y=satisfaction,
-        name='Satisfaction'
-    ))
-    attribute_fig.update_layout(
-        barmode='group',
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white'),
-        xaxis=dict(gridcolor='#404040'),
-        yaxis=dict(gridcolor='#404040')
-    )
-    
-    # Add sentiment value display
-    sentiment_value = f"Current Threshold: {sentiment_threshold}%"
-    
-    return (
-        donut_fig,
-        recent_reviews.to_dict('records'),
-        metrics,
-        brand_health_score,
-        competitive_score,
-        product_score,
-        market_share_fig,
-        price_fig,
-        positive_wordcloud,
-        negative_wordcloud,
-        attribute_fig,
-        sentiment_value,
-        f"{total_reviews:,}",
-        f"{positive_reviews:,}"
-    )
+    # Return default values if filters are not set
+    if category is None or brand is None:
+        empty_fig = create_empty_fig()
+        return (
+            empty_fig,  # sentiment-treemap
+            [],  # reviews-table
+            [],  # metrics-container
+            "0%",  # brand-health-score
+            "0%",  # competitive-score
+            "0%",  # product-score
+            empty_fig,  # market-share-trend
+            empty_fig,  # pricing-comparison
+            None,  # positive-wordcloud
+            None,  # negative-wordcloud
+            empty_fig,  # brand-positive-wordcloud
+            empty_fig,  # brand-negative-wordcloud
+            "0",  # total-reviews-counter
+            "0"   # positive-reviews-counter
+        )
+
+    try:
+        # Apply filters
+        category_data = data[data['category'] == category]
+        filtered_data = category_data[category_data['brand'] == brand]
+        
+        if len(filtered_data) == 0:
+            empty_fig = create_empty_fig()
+            return (
+                empty_fig,  # sentiment-treemap
+                [],  # reviews-table
+                [],  # metrics-container
+                "0%",  # brand-health-score
+                "0%",  # competitive-score
+                "0%",  # product-score
+                empty_fig,  # market-share-trend
+                empty_fig,  # pricing-comparison
+                None,  # positive-wordcloud
+                None,  # negative-wordcloud
+                empty_fig,  # brand-positive-wordcloud
+                empty_fig,  # brand-negative-wordcloud
+                "0",  # total-reviews-counter
+                "0"   # positive-reviews-counter
+            )
+
+        # Create sentiment treemap
+        sentiment_counts = filtered_data['sentiment'].value_counts()
+        
+        # Create treemap with sentiment data
+        sentiment_treemap = go.Figure(go.Treemap(
+            ids=sentiment_counts.index,
+            labels=sentiment_counts.index,
+            parents=[''] * len(sentiment_counts),
+            values=sentiment_counts.values,
+            textinfo="label+value+percent parent",
+            marker=dict(
+                colors=['#2ecc71' if filtered_data[filtered_data['sentiment'] == s]['sentiment_score'].mean() > 3 
+                       else '#e74c3c' if filtered_data[filtered_data['sentiment'] == s]['sentiment_score'].mean() < 3 
+                       else '#95a5a6' 
+                       for s in sentiment_counts.index],
+                line=dict(width=2, color='#2d3436')
+            ),
+            textfont=dict(color='white', size=14)
+        ))
+        
+        sentiment_treemap.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            margin=dict(t=30, l=25, r=25, b=25),
+            font=dict(color='white'),
+            title=dict(
+                text="Sentiment Distribution",
+                font=dict(size=20, color='white'),
+                x=0.5,
+                y=0.95
+            )
+        )
+        
+        # Generate word clouds
+        def generate_wordcloud(texts, max_words=100):
+            if not texts:
+                return None
+            try:
+                # Clean and convert texts to strings
+                cleaned_texts = []
+                for text in texts:
+                    # Handle NaN/None values
+                    if pd.isna(text):
+                        continue
+                    # Convert to string and clean
+                    try:
+                        text_str = str(text).strip()
+                        if text_str:  # Only add non-empty strings
+                            cleaned_texts.append(text_str)
+                    except:
+                        continue
+                
+                if not cleaned_texts:
+                    return None
+                    
+                text = ' '.join(cleaned_texts)
+                wordcloud = WordCloud(
+                    width=800,
+                    height=400,
+                    background_color='#2d3436',
+                    colormap='viridis',
+                    max_words=max_words,
+                    contour_width=1,
+                    contour_color='#636e72'
+                ).generate(text)
+                
+                # Convert to base64 for display
+                img = io.BytesIO()
+                wordcloud.to_image().save(img, format='PNG')
+                img.seek(0)
+                return f'data:image/png;base64,{base64.b64encode(img.getvalue()).decode()}'
+            except Exception as e:
+                print(f"Error generating wordcloud: {str(e)}")
+                return None
+        
+        # Get reviews from all other brands in the selected category
+        category_data = data[data['category'] == category]  # Filter by selected category
+        other_brands_data = category_data[category_data['brand'] != brand]  # Filter out selected brand
+        
+        # Generate word clouds for competitor analysis
+        positive_reviews = other_brands_data['positive_feature_list'].str.split(',').explode().tolist()
+        negative_reviews = other_brands_data['negative_feature_list'].str.split(',').explode().tolist()
+        
+        positive_wordcloud = generate_wordcloud(positive_reviews)
+        negative_wordcloud = generate_wordcloud(negative_reviews)
+        
+        # Generate word clouds for brand analysis
+        brand_positive_reviews = filtered_data['positive_feature_list'].str.split(',').explode().tolist()
+        brand_negative_reviews = filtered_data['negative_feature_list'].str.split(',').explode().tolist()
+        
+        brand_positive_wordcloud = generate_wordcloud(brand_positive_reviews)
+        brand_negative_wordcloud = generate_wordcloud(brand_negative_reviews)
+        
+        # Create market share trend
+        # Create Share of Voice chart
+        # Group by month and brand to get review counts
+        monthly_brand_counts = category_data.groupby([
+            category_data['date'].dt.to_period('M'),
+            'brand'
+        ]).size().reset_index(name='review_count')
+        
+        # Convert period to timestamp for plotting
+        monthly_brand_counts['date'] = monthly_brand_counts['date'].dt.to_timestamp()
+        
+        # Create stacked area chart
+        market_share_fig = go.Figure()
+        
+        # Add area for each brand
+        for brand_name in category_data['brand'].unique():
+            brand_data = monthly_brand_counts[monthly_brand_counts['brand'] == brand_name]
+            market_share_fig.add_trace(go.Scatter(
+                x=brand_data['date'],
+                y=brand_data['review_count'],
+                name=brand_name,
+                stackgroup='one',
+                fill='tonexty',
+                line=dict(width=0.5),
+                hovertemplate='<b>%{x|%B %Y}</b><br>' +
+                             'Brand: %{fullData.name}<br>' +
+                             'Reviews: %{y}<br>' +
+                             '<extra></extra>'
+            ))
+        
+        market_share_fig.update_layout(
+            title='Share of Voice',
+            xaxis_title='Month',
+            yaxis_title='Number of Reviews',
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='white'),
+            xaxis=dict(
+                gridcolor='#404040',
+                tickformat='%B %Y'
+            ),
+            yaxis=dict(
+                gridcolor='#404040',
+                showgrid=True
+            ),
+            hovermode='x unified',
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                font=dict(size=12, color='white'),
+                bgcolor='rgba(0,0,0,0)',
+                bordercolor='rgba(0,0,0,0)'
+            )
+        )
+
+        # Create price analysis chart
+        price_fig = go.Figure()
+
+        brands = category_data['brand'].unique()
+        colors = ['#FFA500' if b == brand else '#3498db' for b in brands]
+        
+        price_fig.add_trace(go.Bar(
+            x=brands,
+            y=category_data.groupby('brand')['avg_brand_price'].mean(),
+            name='Brand Average Price',
+            marker_color=colors
+        ))
+        
+        category_avg = category_data['avg_brand_price'].mean()
+        price_fig.add_trace(go.Scatter(
+            x=category_data['brand'].unique(),
+            y=[category_avg] * len(category_data['brand'].unique()),
+            name='Category Average',
+            line=dict(color='#e74c3c', width=2, dash='dash'),
+            mode='lines'
+        ))
+        
+        price_fig.update_layout(
+            title='Brand Price Comparison',
+            xaxis_title='Brand',
+            yaxis_title='Average Price',
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='white'),
+            xaxis=dict(gridcolor='#404040'),
+            yaxis=dict(gridcolor='#404040'),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                font=dict(size=12, color='white'),
+                bgcolor='rgba(0,0,0,0)',
+                bordercolor='rgba(0,0,0,0)'
+            )
+        )
+
+        # Calculate metrics
+        total_reviews = len(filtered_data)
+        positive_reviews_count = len(filtered_data[filtered_data['sentiment_score'] >= 3])
+        positive_pct = (filtered_data['sentiment_score'] >= 3).mean() * 100
+        avg_rating = filtered_data['rating'].mean()
+        avg_sentiment_score = filtered_data['sentiment_score'].mean()
+        
+        # Get recent reviews
+        recent_reviews = filtered_data.sort_values('date', ascending=False).head(8)
+        
+        metrics = [
+            html.H4(f"Total Reviews: {total_reviews:,}", style={'color': 'white'}),
+            html.H4(f"Positive Sentiment: {positive_pct:.1f}%", style={'color': 'white'}),
+            html.H4(f"Average Rating: {avg_rating:.1f}/5.0", style={'color': 'white'}),
+            html.H4(f"Average Sentiment Score: {avg_sentiment_score:.1f}/5.0", style={'color': 'white'})
+        ]
+        
+        # Calculate scores
+        brand_health = (filtered_data['sentiment_score'] >= 3).mean() * 100
+        competitive_position = np.random.uniform(75, 95)
+        product_score = np.random.uniform(80, 98)
+        
+        return (
+            sentiment_treemap,
+            recent_reviews.to_dict('records'),
+            metrics,
+            f"{brand_health:.1f}%",
+            f"{competitive_position:.1f}%",
+            f"{product_score:.1f}%",
+            market_share_fig,
+            price_fig,
+            positive_wordcloud,
+            negative_wordcloud,
+            brand_positive_wordcloud,
+            brand_negative_wordcloud,
+            f"{total_reviews:,}",
+            f"{positive_reviews_count:,}"
+        )
+        
+    except Exception as e:
+        print(f"Error in callback: {str(e)}")
+        empty_fig = create_empty_fig()
+        return (
+            empty_fig,  # sentiment-treemap
+            [],  # reviews-table
+            [],  # metrics-container
+            "0%",  # brand-health-score
+            "0%",  # competitive-score
+            "0%",  # product-score
+            empty_fig,  # market-share-trend
+            empty_fig,  # pricing-comparison
+            None,  # positive-wordcloud
+            None,  # negative-wordcloud
+            empty_fig,  # brand-positive-wordcloud
+            empty_fig,  # brand-negative-wordcloud
+            "0",  # total-reviews-counter
+            "0"   # positive-reviews-counter
+        )
 
 if __name__ == "__main__":
     app.run(debug=True)

@@ -17,6 +17,9 @@ from databricks.sdk.core import Config
 # Ensure environment variable is set correctly
 assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
+# Databricks config
+cfg = Config()
+
 def sqlQuery(query: str) -> pd.DataFrame:
     """Execute a SQL query and return the result as a pandas DataFrame."""
     cfg = Config()  # Pull environment variables for auth
@@ -29,135 +32,39 @@ def sqlQuery(query: str) -> pd.DataFrame:
             cursor.execute(query)
             return cursor.fetchall_arrow().to_pandas()
 
+        
+def sql_query_with_user_token(query: str, user_token: str) -> pd.DataFrame:
+    """Execute a SQL query and return the result as a pandas DataFrame."""
+    with sql.connect(
+        server_hostname=cfg.host,
+        http_path=f"/sql/1.0/warehouses/{cfg.warehouse_id}",
+        access_token=user_token  # Pass the user token into the SQL connect to query on behalf of user
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query)
+            return cursor.fetchall_arrow().to_pandas()
+        
 
-# Generate Sample Data
-def generate_sample_data() -> pd.DataFrame:
-    """Generate comprehensive sample category review data."""
-    np.random.seed(42)
-    n_samples = 2000  # Increased sample size
-    
-    # Generate dates for the past year with more recent dates having higher frequency
-    end_date = pd.Timestamp.now()
-    start_date = end_date - pd.DateOffset(months=12)
-    dates = pd.date_range(start=start_date, end=end_date, freq='D')
-    
-    # Generate categories with different characteristics
-    categories = ['Apple Products', 'Industrial & Scientific', 'Health & Personal Care', 'Amazon Devices']
-    category_weights = [0.4, 0.3, 0.2, 0.1]  # Weights sum to 1.0
-    
-    # Generate random data with more realistic patterns
-    data = pd.DataFrame({
-        'date': np.random.choice(dates, n_samples),
-        'category': np.random.choice(categories, n_samples, p=category_weights),
-        'source': np.random.choice(['Website', 'Social Media', 'App Store', 'Email'], n_samples, p=[0.4, 0.3, 0.2, 0.1]),
-        'rating': np.random.randint(1, 6, n_samples),
-        'review_text': [
-            f"Sample review text {i} about the category experience and product quality."
-            for i in range(n_samples)
-        ]
-    })
-    
-    # Add sentiment based on rating with some randomness
-    def get_sentiment(rating):
-        if rating >= 4:
-            return np.random.choice(['Positive', 'Positive', 'Positive', 'Neutral'], p=[0.8, 0.1, 0.05, 0.05])
-        elif rating <= 2:
-            return np.random.choice(['Negative', 'Negative', 'Negative', 'Neutral'], p=[0.8, 0.1, 0.05, 0.05])
-        else:
-            return np.random.choice(['Neutral', 'Positive', 'Negative'], p=[0.6, 0.2, 0.2])
-    
-    data['sentiment'] = data['rating'].apply(get_sentiment)
-    
-    # Add product attributes
-    attributes = ['Quality', 'Price', 'Service', 'Innovation', 'Design']
-    for attr in attributes:
-        data[f'{attr.lower()}_score'] = np.random.uniform(1, 10, n_samples)
-    
-    # Add market share data
-    data['market_share'] = np.random.uniform(15, 35, n_samples)
-    
-    # Add competitive metrics
-    data['competitive_position'] = np.random.uniform(60, 95, n_samples)
-    
-    # Add time-based patterns
-    data['month'] = data['date'].dt.month
-    data['quarter'] = data['date'].dt.quarter
-    
-    # Add seasonal patterns
-    def add_seasonal_pattern(row):
-        month = row['month']
-        if month in [12, 1, 2]:  # Winter
-            return row['rating'] * 1.1
-        elif month in [3, 4, 5]:  # Spring
-            return row['rating'] * 1.05
-        elif month in [6, 7, 8]:  # Summer
-            return row['rating'] * 0.95
-        else:  # Fall
-            return row['rating'] * 1.0
-    
-    data['seasonal_rating'] = data.apply(add_seasonal_pattern, axis=1)
-    
-    # Add category-specific patterns
-    category_patterns = {
-        'Apple Products': {'rating_boost': 1.2, 'sentiment_boost': 0.9},
-        'Industrial & Scientific': {'rating_boost': 1.1, 'sentiment_boost': 0.8},
-        'Health & Personal Care': {'rating_boost': 0.9, 'sentiment_boost': 0.7},
-        'Amazon Devices': {'rating_boost': 0.8, 'sentiment_boost': 0.6}
-    }
-    
-    for category, pattern in category_patterns.items():
-        mask = data['category'] == category
-        data.loc[mask, 'rating'] = data.loc[mask, 'rating'] * pattern['rating_boost']
-        data.loc[mask, 'market_share'] = data.loc[mask, 'market_share'] * pattern['sentiment_boost']
-    
-    # Ensure ratings stay within 1-5 range
-    data['rating'] = data['rating'].clip(1, 5)
-    
-    # Add review categories
-    review_categories = ['Product', 'Service', 'Price', 'Quality', 'Experience']
-    data['review_category'] = np.random.choice(review_categories, n_samples, p=[0.3, 0.3, 0.2, 0.1, 0.1])
-    
-    # Add review length
-    data['review_length'] = np.random.randint(50, 500, n_samples)
-    
-    # Add response time (in hours)
-    data['response_time'] = np.random.exponential(24, n_samples)  # Mean response time of 24 hours
-    
-    # Add resolution time (in hours)
-    data['resolution_time'] = data['response_time'] + np.random.exponential(48, n_samples)
-    
-    # Add brand column
-    brands_by_category = {
-        'Apple Products': ['iPhone', 'iPad', 'MacBook', 'Apple Watch'],
-        'Industrial & Scientific': ['Bosch', '3M', 'Honeywell', 'Siemens'],
-        'Health & Personal Care': ['Oral-B', 'Philips', 'Braun', 'Panasonic'],
-        'Amazon Devices': ['Echo', 'Fire TV', 'Kindle', 'Ring']
-    }
-    data['brand'] = data['category'].apply(lambda cat: np.random.choice(brands_by_category[cat]))
-    
-    return data
-
-
-
-def load_dummy_data() -> pd.DataFrame:
-    """Load sample data."""
+def load_data(local: bool, query: str) -> pd.DataFrame:
+    """Load data from Databricks SQL warehouse using either user or app authentication."""
     try:
-        return generate_sample_data()
+        if local:
+            # Extract user access token from the request headers
+            user_token = flask.request.headers.get('X-Forwarded-Access-Token')
+            if not user_token:
+                raise Exception("Missing access token in headers.")
+            # Query the SQL data with the user credentials
+            return sql_query_with_user_token(query, user_token=user_token)
+        else:
+            return sqlQuery(query)
     except Exception as e:
-        print(f"Data generation failed: {str(e)}")
+        print(f"Data load failed: {str(e)}")
         return pd.DataFrame()
-    
 
 
-# Fetch the data
-try:
-    # This example query depends on the nyctaxi data set in Unity Catalog, see https://docs.databricks.com/en/discover/databricks-datasets.html for details
-    data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights")
-    print(f"Data shape: {data.shape}")
-    print(f"Data columns: {data.columns}")
-except Exception as e:
-    print(f"An error occurred in querying data: {str(e)}")
-    data = pd.DataFrame()
+# Fetch the data. When debugging locally, set local = True to authenticate with SP creds. For Databricks app deployment, set local = False
+queryText = "SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights"
+data = load_data(local=False, query=queryText)
 
 # Convert the date column to a datetime object
 data['date'] = pd.to_datetime(data['date'], errors='coerce')

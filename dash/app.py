@@ -318,15 +318,15 @@ app.layout = dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Brand Analysis", style=CARD_HEADER_STYLE),
+                        dbc.CardHeader("Brand Review Attributes", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
                             dbc.Row([
                                 dbc.Col([
-                                    html.H4("Positive Reviews", className="text-center mb-3"),
+                                    html.H4("Positive", className="text-center mb-3"),
                                     html.Img(id='brand-positive-wordcloud', style={'width': '100%', 'height': 'auto'})
                                 ], width=6),
                                 dbc.Col([
-                                    html.H4("Negative Reviews", className="text-center mb-3"),
+                                    html.H4("Negative", className="text-center mb-3"),
                                     html.Img(id='brand-negative-wordcloud', style={'width': '100%', 'height': 'auto'})
                                 ], width=6)
                             ])
@@ -366,15 +366,15 @@ app.layout = dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Attributes", style=CARD_HEADER_STYLE),
+                        dbc.CardHeader("Category Review Attributes", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
                             dbc.Row([
                                 dbc.Col([
-                                    html.H4("Positive Feedback Word Cloud", className="text-center mb-3"),
+                                    html.H4("Positive", className="text-center mb-3"),
                                     html.Img(id='positive-wordcloud', style={'width': '100%', 'height': 'auto'})
                                 ], width=6),
                                 dbc.Col([
-                                    html.H4("Negative Feedback Word Cloud", className="text-center mb-3"),
+                                    html.H4("Negative", className="text-center mb-3"),
                                     html.Img(id='negative-wordcloud', style={'width': '100%', 'height': 'auto'})
                                 ], width=6)
                             ])
@@ -556,15 +556,15 @@ def update_visuals(n_clicks, category, brand):
         other_brands_data = category_data[category_data['brand'] != brand]  # Filter out selected brand
         
         # Generate word clouds for competitor analysis
-        positive_reviews = other_brands_data[other_brands_data['sentiment_score'] >= 3]['review_text'].tolist()
-        negative_reviews = other_brands_data[other_brands_data['sentiment_score'] < 3]['review_text'].tolist()
+        positive_reviews = other_brands_data['positive_feature_list'].str.split(',').explode().tolist()
+        negative_reviews = other_brands_data['negative_feature_list'].str.split(',').explode().tolist()
         
         positive_wordcloud = generate_wordcloud(positive_reviews)
         negative_wordcloud = generate_wordcloud(negative_reviews)
         
         # Generate word clouds for brand analysis
-        brand_positive_reviews = filtered_data[filtered_data['sentiment_score'] >= 3]['review_text'].tolist()
-        brand_negative_reviews = filtered_data[filtered_data['sentiment_score'] < 3]['review_text'].tolist()
+        brand_positive_reviews = filtered_data['positive_feature_list'].str.split(',').explode().tolist()
+        brand_negative_reviews = filtered_data['negative_feature_list'].str.split(',').explode().tolist()
         
         brand_positive_wordcloud = generate_wordcloud(brand_positive_reviews)
         brand_negative_wordcloud = generate_wordcloud(brand_negative_reviews)

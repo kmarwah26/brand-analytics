@@ -11,40 +11,45 @@ import flask  # for request context
 import base64
 from wordcloud import WordCloud
 import io
+from databricks import sql
+from databricks.sdk.core import Config
 
 # Ensure environment variable is set correctly
 assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
-# def sqlQuery(query: str) -> pd.DataFrame:
-#     """Execute a SQL query and return the result as a pandas DataFrame."""
-#     cfg = Config()  # Pull environment variables for auth
-#     with sql.connect(
-#         server_hostname=cfg.host,
-#         http_path=f"/sql/1.0/warehouses/{os.getenv('DATABRICKS_WAREHOUSE_ID')}",
-#         credentials_provider=lambda: cfg.authenticate
-#     ) as connection:
-#         with connection.cursor() as cursor:
-#             cursor.execute(query)
-#             return cursor.fetchall_arrow().to_pandas()
+# Load data from SQL
+def sqlQuery(query: str) -> pd.DataFrame:
+    """Execute a SQL query and return the result as a pandas DataFrame."""
+    cfg = Config()  # Pull environment variables for auth
+    with sql.connect(
+        server_hostname=cfg.host,
+        http_path=f"/sql/1.0/warehouses/{os.getenv('DATABRICKS_WAREHOUSE_ID')}",
+        credentials_provider=lambda: cfg.authenticate
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query)
+            return cursor.fetchall_arrow().to_pandas()
 
-# Load data from CSV
-try:
-    data = pd.read_csv('app_data/brand_insights_data.csv')
-    print(f"Data shape: {data.shape}")
-    print(f"Data columns: {data.columns}")
+data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights")
+
+# # Load data from CSV
+# try:
+#     data = pd.read_csv('app_data/brand_insights_data.csv')
+#     print(f"Data shape: {data.shape}")
+#     print(f"Data columns: {data.columns}")
     
-    # Convert the date column to a datetime object
-    data['date'] = pd.to_datetime(data['date'], errors='coerce')
+#     # Convert the date column to a datetime object
+#     data['date'] = pd.to_datetime(data['date'], errors='coerce')
     
-    # Ensure required columns exist
-    required_columns = ['date', 'category', 'brand', 'product', 'rating', 'review_text', 'sentiment', 'sentiment_score', 'positive_feature_list', 'negative_feature_list', 'avg_brand_price']
-    missing_columns = [col for col in required_columns if col not in data.columns]
-    if missing_columns:
-        raise ValueError(f"Missing required columns: {missing_columns}")
+#     # Ensure required columns exist
+#     required_columns = ['date', 'category', 'brand', 'product', 'rating', 'review_text', 'sentiment', 'sentiment_score', 'positive_feature_list', 'negative_feature_list', 'avg_brand_price']
+#     missing_columns = [col for col in required_columns if col not in data.columns]
+#     if missing_columns:
+#         raise ValueError(f"Missing required columns: {missing_columns}")
         
-except Exception as e:
-    print(f"An error occurred loading data: {str(e)}")
-    data = pd.DataFrame()
+# except Exception as e:
+#     print(f"An error occurred loading data: {str(e)}")
+#     data = pd.DataFrame()
 
 # Initialize the Dash app with Bootstrap styling
 app = dash.Dash(__name__, 
@@ -573,7 +578,7 @@ def update_visuals(n_clicks, category, brand):
         # Create Share of Voice chart
         # Group by month and brand to get review counts
         monthly_brand_counts = category_data.groupby([
-            category_data['date'].dt.to_period('M'),
+            pd.to_datetime(category_data['date']).dt.to_period('M'),
             'brand'
         ]).size().reset_index(name='review_count')
         

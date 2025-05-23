@@ -37,7 +37,7 @@ try:
     data['date'] = pd.to_datetime(data['date'], errors='coerce')
     
     # Ensure required columns exist
-    required_columns = ['date', 'category', 'brand', 'rating', 'review_text', 'sentiment', 'sentiment_score', 'avg_brand_price']
+    required_columns = ['date', 'category', 'brand', 'product', 'rating', 'review_text', 'sentiment', 'sentiment_score', 'positive_feature_list', 'negative_feature_list', 'avg_brand_price']
     missing_columns = [col for col in required_columns if col not in data.columns]
     if missing_columns:
         raise ValueError(f"Missing required columns: {missing_columns}")
@@ -487,7 +487,9 @@ def update_visuals(n_clicks, category, brand):
             values=sentiment_counts.values,
             textinfo="label+value+percent parent",
             marker=dict(
-                colors=['#2ecc71' if s == 'Positive' else '#e74c3c' if s == 'Negative' else '#95a5a6' 
+                colors=['#2ecc71' if filtered_data[filtered_data['sentiment'] == s]['sentiment_score'].mean() > 3 
+                       else '#e74c3c' if filtered_data[filtered_data['sentiment'] == s]['sentiment_score'].mean() < 3 
+                       else '#95a5a6' 
                        for s in sentiment_counts.index],
                 line=dict(width=2, color='#2d3436')
             ),

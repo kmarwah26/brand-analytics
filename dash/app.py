@@ -13,43 +13,153 @@ from wordcloud import WordCloud
 import io
 from databricks import sql
 from databricks.sdk.core import Config
+import time
 
-# Ensure environment variable is set correctly
-assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
+# # Ensure environment variable is set correctly
+# assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
-# Load data from SQL
-def sqlQuery(query: str) -> pd.DataFrame:
-    """Execute a SQL query and return the result as a pandas DataFrame."""
-    cfg = Config()  # Pull environment variables for auth
-    with sql.connect(
-        server_hostname=cfg.host,
-        http_path=f"/sql/1.0/warehouses/{os.getenv('DATABRICKS_WAREHOUSE_ID')}",
-        credentials_provider=lambda: cfg.authenticate
-    ) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(query)
-            return cursor.fetchall_arrow().to_pandas()
+# # Load data from SQL
+# def sqlQuery(query: str) -> pd.DataFrame:
+#     """Execute a SQL query and return the result as a pandas DataFrame."""
+#     cfg = Config()  # Pull environment variables for auth
+#     with sql.connect(
+#         server_hostname=cfg.host,
+#         http_path=f"/sql/1.0/warehouses/{os.getenv('DATABRICKS_WAREHOUSE_ID')}",
+#         credentials_provider=lambda: cfg.authenticate
+#     ) as connection:
+#         with connection.cursor() as cursor:
+#             cursor.execute(query)
+#             return cursor.fetchall_arrow().to_pandas()
 
-data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights")
+# data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights")
 
-# # Load data from CSV
-# try:
-#     data = pd.read_csv('app_data/brand_insights_data.csv')
-#     print(f"Data shape: {data.shape}")
-#     print(f"Data columns: {data.columns}")
+# Load data from CSV
+try:
+    data = pd.read_csv('app_data/brand_insights_data.csv')
+    print(f"Data shape: {data.shape}")
+    print(f"Data columns: {data.columns}")
     
-#     # Convert the date column to a datetime object
-#     data['date'] = pd.to_datetime(data['date'], errors='coerce')
+    # Convert the date column to a datetime object
+    data['date'] = pd.to_datetime(data['date'], errors='coerce')
     
-#     # Ensure required columns exist
-#     required_columns = ['date', 'category', 'brand', 'product', 'rating', 'review_text', 'sentiment', 'sentiment_score', 'positive_feature_list', 'negative_feature_list', 'avg_brand_price']
-#     missing_columns = [col for col in required_columns if col not in data.columns]
-#     if missing_columns:
-#         raise ValueError(f"Missing required columns: {missing_columns}")
+    # Filter out specific brands
+    excluded_brands = [
+        'Hasbro',
+        'Hasbro Gaming',
+        'Hot Wheels',
+        'L.O.L. Surprise!',
+        'Learning Resources',
+        'Ravensburger',
+        'Schleich',
+        'VTech',
+        'Crayola',
+        'Fisher-Price',
+        'PASOW',
+        'TR Industrial',
+        'GE',
+        'Bolt Dropper',
+        'Energizer',
+        'Cambridge Resources',
+        'Indoor Tactics',
+        'JOTO',
+        'D-Line',
+        'Wrap-It Storage',
+        'OHill',
+        'iFixit',
+        'Bayco',
+        'Gorilla',
+        'DEWALT'
+    ]
+    data = data[~data['brand'].isin(excluded_brands)]
+    
+    # Combine Mattel brands
+    data['brand'] = data['brand'].replace('Mattel Games', 'Mattel')
+    
+    # Add negative reviews for LEGO across different months
+    april_2023 = pd.Timestamp('2023-04-15')
+    may_2023 = pd.Timestamp('2023-05-15')
+    june_2023 = pd.Timestamp('2023-06-15')
+    july_2023 = pd.Timestamp('2023-07-15')
+    
+    # April 2023 - Random Issues
+    random_issues = [
+        'Missing pieces in the set',
+        'Instructions unclear',
+        'Pieces don\'t fit properly',
+        'Box damaged on arrival',
+        'Wrong pieces included'
+    ]
+    lego_april_reviews = pd.DataFrame({
+        'date': [april_2023] * 1000,
+        'category': ['Toys & Games'] * 1000,
+        'brand': ['LEGO'] * 1000,
+        'product': ['LEGO Set'] * 1000,
+        'rating': [2.0] * 1000,
+        'review_text': np.random.choice(random_issues, 1000),
+        'sentiment': ['Negative'] * 1000,
+        'sentiment_score': [1.5] * 1000,
+        'positive_feature_list': [''] * 1000,
+        'negative_feature_list': ['quality issues, missing parts'] * 1000,
+        'avg_brand_price': [data[data['brand'] == 'LEGO']['avg_brand_price'].iloc[0]] * 1000
+    })
+    
+    # May 2023 - Poor Quality
+    lego_may_reviews = pd.DataFrame({
+        'date': [may_2023] * 1500,
+        'category': ['Toys & Games'] * 1500,
+        'brand': ['LEGO'] * 1500,
+        'product': ['LEGO Set'] * 1500,
+        'rating': [2.0] * 1500,
+        'review_text': ['Poor quality of pieces'] * 1500,
+        'sentiment': ['Negative'] * 1500,
+        'sentiment_score': [1.5] * 1500,
+        'positive_feature_list': [''] * 1500,
+        'negative_feature_list': ['poor quality, durability issues'] * 1500,
+        'avg_brand_price': [data[data['brand'] == 'LEGO']['avg_brand_price'].iloc[0]] * 1500
+    })
+    
+    # June 2023 - High Prices
+    lego_june_reviews = pd.DataFrame({
+        'date': [june_2023] * 3000,
+        'category': ['Toys & Games'] * 3000,
+        'brand': ['LEGO'] * 3000,
+        'product': ['LEGO Set'] * 3000,
+        'rating': [2.0] * 3000,
+        'review_text': ['Too expensive for the value'] * 3000,
+        'sentiment': ['Negative'] * 3000,
+        'sentiment_score': [1.5] * 3000,
+        'positive_feature_list': [''] * 3000,
+        'negative_feature_list': ['high price, poor value'] * 3000,
+        'avg_brand_price': [data[data['brand'] == 'LEGO']['avg_brand_price'].iloc[0]] * 3000
+    })
+    
+    # July 2023 - Control Missing
+    lego_july_reviews = pd.DataFrame({
+        'date': [july_2023] * 5000,
+        'category': ['Toys & Games'] * 5000,
+        'brand': ['LEGO'] * 5000,
+        'product': ['LEGO Set'] * 5000,
+        'rating': [2.0] * 5000,
+        'review_text': ['Missing control pieces'] * 5000,
+        'sentiment': ['Negative'] * 5000,
+        'sentiment_score': [1.5] * 5000,
+        'positive_feature_list': [''] * 5000,
+        'negative_feature_list': ['missing control, incomplete set'] * 5000,
+        'avg_brand_price': [data[data['brand'] == 'LEGO']['avg_brand_price'].iloc[0]] * 5000
+    })
+    
+    # Concatenate all new reviews with the existing data
+    data = pd.concat([data, lego_april_reviews, lego_may_reviews, lego_june_reviews, lego_july_reviews], ignore_index=True)
+    
+    # Ensure required columns exist
+    required_columns = ['date', 'category', 'brand', 'product', 'rating', 'review_text', 'sentiment', 'sentiment_score', 'positive_feature_list', 'negative_feature_list', 'avg_brand_price']
+    missing_columns = [col for col in required_columns if col not in data.columns]
+    if missing_columns:
+        raise ValueError(f"Missing required columns: {missing_columns}")
         
-# except Exception as e:
-#     print(f"An error occurred loading data: {str(e)}")
-#     data = pd.DataFrame()
+except Exception as e:
+    print(f"An error occurred loading data: {str(e)}")
+    data = pd.DataFrame()
 
 # Initialize the Dash app with Bootstrap styling
 app = dash.Dash(__name__, 
@@ -137,6 +247,35 @@ app.index_string = '''
             .Select.is-open > .Select-control .Select-arrow {
                 border-color: transparent transparent #b2bec3 !important;
             }
+            
+            /* Chatbot icon styles */
+            .chatbot-icon {
+                position: fixed;
+                bottom: 30px;
+                right: 30px;
+                width: 60px;
+                height: 60px;
+                background-color: #3498db;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+                cursor: pointer;
+                transition: transform 0.2s ease-in-out;
+                z-index: 1000;
+            }
+            
+            .chatbot-icon:hover {
+                transform: scale(1.1);
+                background-color: #2980b9;
+            }
+            
+            .chatbot-icon svg {
+                width: 30px;
+                height: 30px;
+                fill: white;
+            }
         </style>
     </head>
     <body>
@@ -146,6 +285,11 @@ app.index_string = '''
             {%scripts%}
             {%renderer%}
         </footer>
+        <a href="/chat" target="_blank" class="chatbot-icon" title="Open Chatbot">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
+            </svg>
+        </a>
     </body>
 </html>
 '''
@@ -164,6 +308,23 @@ app.layout = dbc.Container([
     dcc.Store(id='page-load-trigger', data=0),
     dbc.Row([dbc.Col(html.H1("Brand Manager", className="text-center my-4 text-light"), width=12)]),
     
+    # AI Agent Modal
+    dbc.Modal([
+        dbc.ModalHeader(dbc.ModalTitle("Brand AI Agent"), style={'backgroundColor': '#2d3436', 'color': 'white'}),
+        dbc.ModalBody([
+            html.Div([
+                html.H5("Analyzing Most Recent Reviews", style={'color': 'white', 'marginBottom': '20px'}),
+                html.Div(id='ai-loading-message', style={'color': 'white', 'marginBottom': '20px'}),
+                html.Div(id='ai-loading-spinner', style={'marginBottom': '20px'}),
+                html.Div(id='ai-analysis-content', style={'marginTop': '20px'})
+            ])
+        ], style={'backgroundColor': '#2d3436'}),
+        dbc.ModalFooter(
+            dbc.Button("Close", id="close-ai-modal", className="ms-auto", n_clicks=0),
+            style={'backgroundColor': '#2d3436'}
+        ),
+    ], id="ai-agent-modal", size="lg", is_open=False),
+    
     # Filter Section
     dbc.Row([
         dbc.Col([
@@ -176,7 +337,7 @@ app.layout = dbc.Container([
                             dcc.Dropdown(
                                 id='category-filter',
                                 options=[{'label': cat, 'value': cat} for cat in sorted(data['category'].unique())],
-                                value=data['category'].iloc[0],
+                                value='Toys & Games',
                                 className="mb-3"
                             )
                         ], width=6),
@@ -243,17 +404,81 @@ app.layout = dbc.Container([
                                         dbc.CardBody([
                                             html.H4("Total Reviews", className="text-center mb-2", style={'color': 'white'}),
                                             html.H2(id='total-reviews-counter', className="text-center mb-2", style={'color': '#3498db', 'fontSize': '2rem'}),
+                                            html.A(
+                                                "Competitive Trends",
+                                                href="#positive-wordcloud",
+                                                id="total-reviews-link",
+                                                className="text-center d-block",
+                                                style={
+                                                    'color': '#3498db',
+                                                    'textDecoration': 'none',
+                                                    'fontSize': '0.9rem',
+                                                    'marginTop': '5px'
+                                                }
+                                            )
                                         ])
                                     ], style={**CARD_STYLE, 'backgroundColor': '#2d3e4a'})  # Lighter blue
-                                ], width=6),
+                                ], width=3),
                                 dbc.Col([
                                     dbc.Card([
                                         dbc.CardBody([
                                             html.H4("Positive Reviews", className="text-center mb-2", style={'color': 'white'}),
                                             html.H2(id='positive-reviews-counter', className="text-center mb-2", style={'color': '#2ecc71', 'fontSize': '2rem'}),
+                                            html.A(
+                                                "Trends",
+                                                href="#tabs",
+                                                id="positive-reviews-link",
+                                                className="text-center d-block",
+                                                style={
+                                                    'color': '#2ecc71',
+                                                    'textDecoration': 'none',
+                                                    'fontSize': '0.9rem',
+                                                    'marginTop': '5px'
+                                                }
+                                            )
                                         ])
                                     ], style={**CARD_STYLE, 'backgroundColor': '#2d4a3e'})  # Lighter green
-                                ], width=6)
+                                ], width=3),
+                                dbc.Col([
+                                    dbc.Card([
+                                        dbc.CardBody([
+                                            html.H4("Neutral Reviews", className="text-center mb-2", style={'color': 'white'}),
+                                            html.H2(id='neutral-reviews-counter', className="text-center mb-2", style={'color': '#f1c40f', 'fontSize': '2rem'}),
+                                            html.A(
+                                                "View Attributes",
+                                                href="#tabs",
+                                                id="neutral-reviews-link",
+                                                className="text-center d-block",
+                                                style={
+                                                    'color': '#f1c40f',
+                                                    'textDecoration': 'none',
+                                                    'fontSize': '0.9rem',
+                                                    'marginTop': '5px'
+                                                }
+                                            )
+                                        ])
+                                    ], style={**CARD_STYLE, 'backgroundColor': '#4a3e2d'})  # Lighter yellow
+                                ], width=3),
+                                dbc.Col([
+                                    dbc.Card([
+                                        dbc.CardBody([
+                                            html.H4("Negative Reviews", className="text-center mb-2", style={'color': 'white'}),
+                                            html.H2(id='negative-reviews-counter', className="text-center mb-2", style={'color': '#e74c3c', 'fontSize': '2rem'}),
+                                            html.A(
+                                                "Summary",
+                                                href="#tabs",
+                                                id="negative-reviews-link",
+                                                className="text-center d-block",
+                                                style={
+                                                    'color': '#e74c3c',
+                                                    'textDecoration': 'none',
+                                                    'fontSize': '0.9rem',
+                                                    'marginTop': '5px'
+                                                }
+                                            )
+                                        ])
+                                    ], style={**CARD_STYLE, 'backgroundColor': '#4a2d2d'})  # Lighter red
+                                ], width=3)
                             ], className="mb-4"),
                             html.Div(id='metrics-container', className="d-flex flex-column gap-3 text-light")
                         ])
@@ -279,43 +504,20 @@ app.layout = dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Recent Reviews", style=CARD_HEADER_STYLE),
+                        dbc.CardHeader([
+                            html.Div([
+                                html.Span("Monthly Review Trends", style={'flex': '1'}),
+                                dbc.Button(
+                                    "AI Agent",
+                                    id="open-ai-modal",
+                                    color="primary",
+                                    className="ms-auto",
+                                    style={'backgroundColor': '#3498db', 'borderColor': '#3498db'}
+                                )
+                            ], style={'display': 'flex', 'alignItems': 'center'})
+                        ], style=CARD_HEADER_STYLE),
                         dbc.CardBody([
-                            dag.AgGrid(
-                                id='reviews-table',
-                                columnDefs=[
-                                    {"headerName": "Date", "field": "date", "sortable": True, "width": 100},
-                                    {"headerName": "Sentiment", "field": "sentiment", "sortable": True, "width": 100},
-                                    {"headerName": "Rating", "field": "rating", "sortable": True, "width": 80},
-                                    {"headerName": "Category", "field": "category", "sortable": True, "width": 150},
-                                    {
-                                        "headerName": "Review",
-                                        "field": "review_text",
-                                        "sortable": True,
-                                        "flex": 1,
-                                        "minWidth": 300,
-                                        "autoHeight": True,
-                                        "wrapText": True,
-                                        "cellStyle": {
-                                            "whiteSpace": "normal",
-                                            "lineHeight": "1.5"
-                                        }
-                                    }
-                                ],
-                                defaultColDef={
-                                    "resizable": True,
-                                    "sortable": True,
-                                    "filter": True,
-                                    "minWidth": 80
-                                },
-                                dashGridOptions={
-                                    "rowSelection": "single",
-                                    "theme": "ag-theme-alpine-dark",
-                                    "rowHeight": "auto",
-                                    "domLayout": "autoHeight"
-                                },
-                                style={"height": "400px", "width": "100%"}
-                            )
+                            dcc.Graph(id='monthly-reviews-chart', style={'height': '400px'})
                         ])
                     ], style=CARD_STYLE)
                 ], width=12)
@@ -409,7 +611,7 @@ def update_brand_options(selected_category):
 # Update the callback with better error handling and data validation
 @app.callback(
     Output('sentiment-treemap', 'figure'),
-    Output('reviews-table', 'rowData'),
+    Output('monthly-reviews-chart', 'figure'),
     Output('metrics-container', 'children'),
     Output('brand-health-score', 'children'),
     Output('competitive-score', 'children'),
@@ -422,6 +624,8 @@ def update_brand_options(selected_category):
     Output('brand-negative-wordcloud', 'src'),
     Output('total-reviews-counter', 'children'),
     Output('positive-reviews-counter', 'children'),
+    Output('neutral-reviews-counter', 'children'),
+    Output('negative-reviews-counter', 'children'),
     Input('page-load-trigger', 'data'),
     Input('category-filter', 'value'),
     Input('brand-filter', 'value')
@@ -442,7 +646,7 @@ def update_visuals(n_clicks, category, brand):
         empty_fig = create_empty_fig()
         return (
             empty_fig,  # sentiment-treemap
-            [],  # reviews-table
+            empty_fig,  # monthly-reviews-chart
             [],  # metrics-container
             "0%",  # brand-health-score
             "0%",  # competitive-score
@@ -454,7 +658,9 @@ def update_visuals(n_clicks, category, brand):
             empty_fig,  # brand-positive-wordcloud
             empty_fig,  # brand-negative-wordcloud
             "0",  # total-reviews-counter
-            "0"   # positive-reviews-counter
+            "0",  # positive-reviews-counter
+            "0",  # neutral-reviews-counter
+            "0"   # negative-reviews-counter
         )
 
     try:
@@ -466,7 +672,7 @@ def update_visuals(n_clicks, category, brand):
             empty_fig = create_empty_fig()
             return (
                 empty_fig,  # sentiment-treemap
-                [],  # reviews-table
+                empty_fig,  # monthly-reviews-chart
                 [],  # metrics-container
                 "0%",  # brand-health-score
                 "0%",  # competitive-score
@@ -478,7 +684,9 @@ def update_visuals(n_clicks, category, brand):
                 empty_fig,  # brand-positive-wordcloud
                 empty_fig,  # brand-negative-wordcloud
                 "0",  # total-reviews-counter
-                "0"   # positive-reviews-counter
+                "0",  # positive-reviews-counter
+                "0",  # neutral-reviews-counter
+                "0"   # negative-reviews-counter
             )
 
         # Create sentiment treemap
@@ -493,8 +701,8 @@ def update_visuals(n_clicks, category, brand):
             textinfo="label+value+percent parent",
             marker=dict(
                 colors=['#2ecc71' if filtered_data[filtered_data['sentiment'] == s]['sentiment_score'].mean() > 3 
-                       else '#e74c3c' if filtered_data[filtered_data['sentiment'] == s]['sentiment_score'].mean() < 3 
-                       else '#95a5a6' 
+                       else '#f1c40f' if filtered_data[filtered_data['sentiment'] == s]['sentiment_score'].mean() == 3 
+                       else '#e74c3c' 
                        for s in sentiment_counts.index],
                 line=dict(width=2, color='#2d3436')
             ),
@@ -515,7 +723,7 @@ def update_visuals(n_clicks, category, brand):
         )
         
         # Generate word clouds
-        def generate_wordcloud(texts, max_words=100):
+        def generate_wordcloud(texts, max_words=100, background_color='#2d3436'):
             if not texts:
                 return None
             try:
@@ -540,7 +748,7 @@ def update_visuals(n_clicks, category, brand):
                 wordcloud = WordCloud(
                     width=800,
                     height=400,
-                    background_color='#2d3436',
+                    background_color=background_color,
                     colormap='viridis',
                     max_words=max_words,
                     contour_width=1,
@@ -564,15 +772,15 @@ def update_visuals(n_clicks, category, brand):
         positive_reviews = other_brands_data['positive_feature_list'].str.split(',').explode().tolist()
         negative_reviews = other_brands_data['negative_feature_list'].str.split(',').explode().tolist()
         
-        positive_wordcloud = generate_wordcloud(positive_reviews)
-        negative_wordcloud = generate_wordcloud(negative_reviews)
+        positive_wordcloud = generate_wordcloud(positive_reviews, background_color='white')  # White background
+        negative_wordcloud = generate_wordcloud(negative_reviews, background_color='#636e72')  # Grey background
         
         # Generate word clouds for brand analysis
         brand_positive_reviews = filtered_data['positive_feature_list'].str.split(',').explode().tolist()
         brand_negative_reviews = filtered_data['negative_feature_list'].str.split(',').explode().tolist()
         
-        brand_positive_wordcloud = generate_wordcloud(brand_positive_reviews)
-        brand_negative_wordcloud = generate_wordcloud(brand_negative_reviews)
+        brand_positive_wordcloud = generate_wordcloud(brand_positive_reviews, background_color='white')  # White background
+        brand_negative_wordcloud = generate_wordcloud(brand_negative_reviews, background_color='#636e72')  # Grey background
         
         # Create market share trend
         # Create Share of Voice chart
@@ -675,33 +883,102 @@ def update_visuals(n_clicks, category, brand):
             )
         )
 
+        # Create monthly sentiment bar chart
+        monthly_sentiment = filtered_data.groupby([
+            pd.to_datetime(filtered_data['date']).dt.to_period('M'),
+            pd.cut(filtered_data['sentiment_score'], 
+                  bins=[0, 2, 3, 5], 
+                  labels=['Negative (<3)', 'Neutral (3)', 'Positive (>3)'])
+        ]).size().unstack(fill_value=0)
+        
+        monthly_sentiment.index = monthly_sentiment.index.astype(str)
+        
+        monthly_reviews_chart = go.Figure()
+        
+        # Add bars for each sentiment score range
+        colors = {
+            'Positive (>3)': '#2ecc71',
+            'Neutral (3)': '#f1c40f',
+            'Negative (<3)': '#e74c3c'
+        }
+        
+        for sentiment in monthly_sentiment.columns:
+            monthly_reviews_chart.add_trace(go.Bar(
+                name=sentiment,
+                x=monthly_sentiment.index,
+                y=monthly_sentiment[sentiment],
+                marker_color=colors.get(sentiment, '#95a5a6'),
+                text=monthly_sentiment[sentiment],  # Add data labels
+                textposition='auto',  # Automatically position labels
+                textfont=dict(
+                    color='white',
+                    size=14
+                )
+            ))
+        
+        monthly_reviews_chart.update_layout(
+            title='Total Reviews',
+            xaxis_title='Month',
+            yaxis_title='Number of Reviews',
+            barmode='group',
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='white'),
+            xaxis=dict(
+                gridcolor='#404040',
+                tickangle=45
+            ),
+            yaxis=dict(
+                gridcolor='#404040',
+                showgrid=True
+            ),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                font=dict(size=12, color='white'),
+                bgcolor='rgba(0,0,0,0)',
+                bordercolor='rgba(0,0,0,0)'
+            ),
+            uniformtext_minsize=8,  # Minimum font size for labels
+            uniformtext_mode='hide'  # Hide labels if they don't fit
+        )
+
         # Calculate metrics
         total_reviews = len(filtered_data)
         positive_reviews_count = len(filtered_data[filtered_data['sentiment_score'] >= 3])
-        positive_pct = (filtered_data['sentiment_score'] >= 3).mean() * 100
-        avg_rating = filtered_data['rating'].mean()
-        avg_sentiment_score = filtered_data['sentiment_score'].mean()
-        
-        # Get recent reviews
-        recent_reviews = filtered_data.sort_values('date', ascending=False).head(8)
-        
-        metrics = [
-            html.H4(f"Total Reviews: {total_reviews:,}", style={'color': 'white'}),
-            html.H4(f"Positive Sentiment: {positive_pct:.1f}%", style={'color': 'white'}),
-            html.H4(f"Average Rating: {avg_rating:.1f}/5.0", style={'color': 'white'}),
-            html.H4(f"Average Sentiment Score: {avg_sentiment_score:.1f}/5.0", style={'color': 'white'})
-        ]
+        neutral_reviews_count = len(filtered_data[(filtered_data['sentiment_score'] >= 2) & (filtered_data['sentiment_score'] < 3)])
+        negative_reviews_count = len(filtered_data[filtered_data['sentiment_score'] < 2])
         
         # Calculate scores
         brand_health = (filtered_data['sentiment_score'] >= 3).mean() * 100
         competitive_position = np.random.uniform(75, 95)
         product_score = np.random.uniform(80, 98)
         
+        # Determine color based on brand health score
+        if brand_health >= 80:
+            health_color = '#2ecc71'  # Green
+        elif brand_health >= 70:
+            health_color = '#f1c40f'  # Yellow
+        else:
+            health_color = '#e74c3c'  # Red
+            
+        metrics = [
+            html.H4(f"Total Reviews: {total_reviews:,}", style={'color': 'white'}),
+            html.H4(f"Positive Sentiment: {positive_reviews_count / total_reviews * 100:.1f}%", style={'color': 'white'}),
+            html.H4(f"Neutral Sentiment: {neutral_reviews_count / total_reviews * 100:.1f}%", style={'color': 'white'}),
+            html.H4(f"Negative Sentiment: {negative_reviews_count / total_reviews * 100:.1f}%", style={'color': 'white'}),
+            html.H4(f"Average Rating: {filtered_data['rating'].mean():.1f}/5.0", style={'color': 'white'}),
+            html.H4(f"Average Sentiment Score: {filtered_data['sentiment_score'].mean():.1f}/5.0", style={'color': 'white'})
+        ]
+        
         return (
             sentiment_treemap,
-            recent_reviews.to_dict('records'),
+            monthly_reviews_chart,
             metrics,
-            f"{brand_health:.1f}%",
+            html.Span(f"{brand_health:.1f}%", style={'color': health_color}),  # Updated brand health score with color
             f"{competitive_position:.1f}%",
             f"{product_score:.1f}%",
             market_share_fig,
@@ -711,7 +988,9 @@ def update_visuals(n_clicks, category, brand):
             brand_positive_wordcloud,
             brand_negative_wordcloud,
             f"{total_reviews:,}",
-            f"{positive_reviews_count:,}"
+            f"{positive_reviews_count:,}",
+            f"{neutral_reviews_count:,}",
+            f"{negative_reviews_count:,}"
         )
         
     except Exception as e:
@@ -719,7 +998,7 @@ def update_visuals(n_clicks, category, brand):
         empty_fig = create_empty_fig()
         return (
             empty_fig,  # sentiment-treemap
-            [],  # reviews-table
+            empty_fig,  # monthly-reviews-chart
             [],  # metrics-container
             "0%",  # brand-health-score
             "0%",  # competitive-score
@@ -731,8 +1010,115 @@ def update_visuals(n_clicks, category, brand):
             empty_fig,  # brand-positive-wordcloud
             empty_fig,  # brand-negative-wordcloud
             "0",  # total-reviews-counter
-            "0"   # positive-reviews-counter
+            "0",  # positive-reviews-counter
+            "0",  # neutral-reviews-counter
+            "0"   # negative-reviews-counter
         )
+
+# Update the callback to handle all tab switching
+@app.callback(
+    Output('tabs', 'active_tab'),
+    Input('positive-reviews-link', 'n_clicks'),
+    Input('neutral-reviews-link', 'n_clicks'),
+    Input('negative-reviews-link', 'n_clicks'),
+    Input('total-reviews-link', 'n_clicks'),
+    prevent_initial_call=True
+)
+def switch_to_product_tab(pos_clicks, neu_clicks, neg_clicks, total_clicks):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return dash.no_update
+    
+    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    if button_id == 'total-reviews-link':
+        return 'tab-competitive'
+    elif button_id in ['positive-reviews-link', 'neutral-reviews-link', 'negative-reviews-link']:
+        return 'tab-product'
+    return dash.no_update
+
+# Add the callback for the AI Agent modal
+@app.callback(
+    Output("ai-agent-modal", "is_open"),
+    [Input("open-ai-modal", "n_clicks"),
+     Input("close-ai-modal", "n_clicks")],
+    [State("ai-agent-modal", "is_open")],
+)
+def toggle_ai_modal(open_clicks, close_clicks, is_open):
+    if open_clicks or close_clicks:
+        return not is_open
+    return is_open
+
+# Add callback to handle loading animation and messages
+@app.callback(
+    [Output("ai-loading-message", "children"),
+     Output("ai-loading-spinner", "children"),
+     Output("ai-analysis-content", "children")],
+    [Input("ai-agent-modal", "is_open"),
+     Input('category-filter', 'value'),
+     Input('brand-filter', 'value')]
+)
+def update_ai_loading(is_open, category, brand):
+    if not is_open:
+        return "", "", []
+    
+    # Initial loading state
+    if is_open:
+        # Show loading spinner and initial message
+        loading_spinner = dbc.Spinner(
+            color="primary",
+            size="lg",
+            type="grow",
+            fullscreen=False,
+            spinner_style={"width": "3rem", "height": "3rem"}
+        )
+        
+        # Return initial loading state
+        return "Analyzing...", loading_spinner, []
+    
+    # After 5 seconds, show connecting message
+    #time.sleep(5)
+    loading_spinner = dbc.Spinner(
+        color="primary",
+        size="lg",
+        type="grow",
+        fullscreen=False,
+        spinner_style={"width": "3rem", "height": "3rem"}
+    )
+    
+    #time.sleep(3)
+    try:
+        # Filter data
+        filtered_data = data[(data['category'] == category) & (data['brand'] == brand)]
+        
+        # Calculate metrics
+        total_reviews = len(filtered_data)
+        positive_reviews = len(filtered_data[filtered_data['sentiment_score'] > 3])
+        neutral_reviews = len(filtered_data[filtered_data['sentiment_score'] == 3])
+        negative_reviews = len(filtered_data[filtered_data['sentiment_score'] < 3])
+        
+        # Create analysis content
+        analysis_content = [
+            html.Div([
+                html.H6("Key Insights:", style={'color': 'white', 'marginBottom': '15px'}),
+                html.Ul([
+                    html.Li(f"Total Reviews: {total_reviews:,}", style={'color': 'white', 'marginBottom': '10px'}),
+                    html.Li(f"Positive Sentiment: {positive_reviews/total_reviews*100:.1f}%", style={'color': 'white', 'marginBottom': '10px'}),
+                    html.Li(f"Neutral Sentiment: {neutral_reviews/total_reviews*100:.1f}%", style={'color': 'white', 'marginBottom': '10px'}),
+                    html.Li(f"Negative Sentiment: {negative_reviews/total_reviews*100:.1f}%", style={'color': 'white', 'marginBottom': '10px'})
+                ]),
+                html.H6("Recommendations:", style={'color': 'white', 'marginTop': '20px', 'marginBottom': '15px'}),
+                html.Ul([
+                    html.Li("Monitor negative sentiment trends closely", style={'color': 'white', 'marginBottom': '10px'}),
+                    html.Li("Focus on maintaining positive customer experiences", style={'color': 'white', 'marginBottom': '10px'}),
+                    html.Li("Address any recurring issues in negative reviews", style={'color': 'white', 'marginBottom': '10px'})
+                ])
+            ])
+        ]
+        
+        return "", "", analysis_content
+        
+    except Exception as e:
+        return "", "", [html.P(f"Error generating analysis: {str(e)}", style={'color': 'white'})]
 
 if __name__ == "__main__":
     app.run(debug=True)

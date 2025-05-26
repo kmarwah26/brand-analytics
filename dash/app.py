@@ -157,6 +157,65 @@ try:
     if missing_columns:
         raise ValueError(f"Missing required columns: {missing_columns}")
         
+    # Add positive reviews for Barbie across different months
+    may_2023 = pd.Timestamp('2023-05-15')
+    june_2023 = pd.Timestamp('2023-06-15')
+    july_2023 = pd.Timestamp('2023-07-15')
+    
+    # May 2023 - Positive Reviews
+    barbie_may_reviews = pd.DataFrame({
+        'date': [may_2023] * 500,
+        'category': ['Toys & Games'] * 500,
+        'brand': ['Barbie'] * 500,
+        'product': ['Barbie Doll'] * 500,
+        'rating': [5.0] * 500,
+        'review_text': ['Excellent quality and design'] * 500,
+        'sentiment': ['Positive'] * 500,
+        'sentiment_score': [4.5] * 500,
+        'positive_feature_list': ['quality, design, durability'] * 500,
+        'negative_feature_list': [''] * 500,
+        'avg_brand_price': [data[data['brand'] == 'Barbie']['avg_brand_price'].iloc[0]] * 500
+    })
+    
+    # June 2023 - Positive Reviews
+    barbie_june_reviews = pd.DataFrame({
+        'date': [june_2023] * 630,
+        'category': ['Toys & Games'] * 630,
+        'brand': ['Barbie'] * 630,
+        'product': ['Barbie Doll'] * 630,
+        'rating': [5.0] * 630,
+        'review_text': ['Great customer experience'] * 630,
+        'sentiment': ['Positive'] * 630,
+        'sentiment_score': [4.5] * 630,
+        'positive_feature_list': ['customer service, packaging, value'] * 630,
+        'negative_feature_list': [''] * 630,
+        'avg_brand_price': [data[data['brand'] == 'Barbie']['avg_brand_price'].iloc[0]] * 630
+    })
+    
+    # July 2023 - Positive Reviews
+    barbie_july_reviews = pd.DataFrame({
+        'date': [july_2023] * 650,
+        'category': ['Toys & Games'] * 650,
+        'brand': ['Barbie'] * 650,
+        'product': ['Barbie Doll'] * 650,
+        'rating': [5.0] * 650,
+        'review_text': ['Amazing product quality'] * 650,
+        'sentiment': ['Positive'] * 650,
+        'sentiment_score': [4.5] * 650,
+        'positive_feature_list': ['quality, innovation, brand value'] * 650,
+        'negative_feature_list': [''] * 650,
+        'avg_brand_price': [data[data['brand'] == 'Barbie']['avg_brand_price'].iloc[0]] * 650
+    })
+    
+    # Concatenate all new reviews with the existing data
+    data = pd.concat([data, barbie_may_reviews, barbie_june_reviews, barbie_july_reviews], ignore_index=True)
+    
+    # Ensure required columns exist
+    required_columns = ['date', 'category', 'brand', 'product', 'rating', 'review_text', 'sentiment', 'sentiment_score', 'positive_feature_list', 'negative_feature_list', 'avg_brand_price']
+    missing_columns = [col for col in required_columns if col not in data.columns]
+    if missing_columns:
+        raise ValueError(f"Missing required columns: {missing_columns}")
+        
 except Exception as e:
     print(f"An error occurred loading data: {str(e)}")
     data = pd.DataFrame()
@@ -193,7 +252,7 @@ COUNTER_BOX_STYLE = {
     'boxShadow': '0 4px 6px rgba(0, 0, 0, 0.2)'
 }
 
-# Add custom CSS for dropdowns
+# Add custom CSS for animations
 app.index_string = '''
 <!DOCTYPE html>
 <html>
@@ -276,6 +335,31 @@ app.index_string = '''
                 height: 30px;
                 fill: white;
             }
+
+            /* Email analysis animation */
+            .email-analysis-container {
+                opacity: 0;
+                transform: translateY(20px);
+                transition: all 0.3s ease-in-out;
+            }
+
+            .email-analysis-container.show {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            .email-analysis-content {
+                background-color: #2d3436;
+                padding: 15px;
+                border-radius: 5px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                transition: all 0.3s ease-in-out;
+            }
+
+            .email-analysis-content:hover {
+                box-shadow: 0 6px 8px rgba(0, 0, 0, 0.2);
+                transform: translateY(-2px);
+            }
         </style>
     </head>
     <body>
@@ -313,10 +397,38 @@ app.layout = dbc.Container([
         dbc.ModalHeader(dbc.ModalTitle("Brand AI Agent"), style={'backgroundColor': '#2d3436', 'color': 'white'}),
         dbc.ModalBody([
             html.Div([
-                html.H5("Analyzing Most Recent Reviews", style={'color': 'white', 'marginBottom': '20px'}),
+                html.H5("Insights", style={'color': 'white', 'marginBottom': '20px'}),
                 html.Div(id='ai-loading-message', style={'color': 'white', 'marginBottom': '20px'}),
                 html.Div(id='ai-loading-spinner', style={'marginBottom': '20px'}),
-                html.Div(id='ai-analysis-content', style={'marginTop': '20px'})
+                html.Div(id='ai-analysis-content', style={'marginTop': '20px'}),
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Button(
+                            "Quick Tip",
+                            id="recommendations-button",
+                            color="success",
+                            className="mt-3 me-2",
+                            style={'backgroundColor': '#2ecc71', 'borderColor': '#2ecc71'}
+                        ),
+                        dbc.Button(
+                            "Next Steps",
+                            id="analyze-button",
+                            color="primary",
+                            className="mt-3",
+                            style={'backgroundColor': '#3498db', 'borderColor': '#3498db'}
+                        )
+                    ], width=12)
+                ]),
+                html.Div(
+                    id='email-analysis',
+                    style={
+                        'marginTop': '20px',
+                        'padding': '20px',
+                        'backgroundColor': '#636e72',
+                        'borderRadius': '5px',
+                        'display': 'none'  # Hidden by default
+                    }
+                )
             ])
         ], style={'backgroundColor': '#2d3436'}),
         dbc.ModalFooter(
@@ -337,7 +449,7 @@ app.layout = dbc.Container([
                             dcc.Dropdown(
                                 id='category-filter',
                                 options=[{'label': cat, 'value': cat} for cat in sorted(data['category'].unique())],
-                                value='Toys & Games',
+                                value=None,  # Removed default value
                                 className="mb-3"
                             )
                         ], width=6),
@@ -403,7 +515,7 @@ app.layout = dbc.Container([
                                     dbc.Card([
                                         dbc.CardBody([
                                             html.H4("Total Reviews", className="text-center mb-2", style={'color': 'white'}),
-                                            html.H2(id='total-reviews-counter', className="text-center mb-2", style={'color': '#3498db', 'fontSize': '2rem'}),
+                                            html.H2(id='total-reviews-counter', className="text-center mb-2", style={'color': '#3498db', 'fontSize': '2rem', 'cursor': 'pointer'}),
                                             html.A(
                                                 "Competitive Trends",
                                                 href="#positive-wordcloud",
@@ -417,13 +529,14 @@ app.layout = dbc.Container([
                                                 }
                                             )
                                         ])
-                                    ], style={**CARD_STYLE, 'backgroundColor': '#2d3e4a'})  # Lighter blue
+                                    ], style={**CARD_STYLE, 'backgroundColor': '#2d3e4a'}),  # Lighter blue
+                                    dbc.Tooltip(id="total-reviews-tooltip", target="total-reviews-counter", placement="top")
                                 ], width=3),
                                 dbc.Col([
                                     dbc.Card([
                                         dbc.CardBody([
                                             html.H4("Positive Reviews", className="text-center mb-2", style={'color': 'white'}),
-                                            html.H2(id='positive-reviews-counter', className="text-center mb-2", style={'color': '#2ecc71', 'fontSize': '2rem'}),
+                                            html.H2(id='positive-reviews-counter', className="text-center mb-2", style={'color': '#2ecc71', 'fontSize': '2rem', 'cursor': 'pointer'}),
                                             html.A(
                                                 "Trends",
                                                 href="#tabs",
@@ -437,13 +550,14 @@ app.layout = dbc.Container([
                                                 }
                                             )
                                         ])
-                                    ], style={**CARD_STYLE, 'backgroundColor': '#2d4a3e'})  # Lighter green
+                                    ], style={**CARD_STYLE, 'backgroundColor': '#2d4a3e'}),  # Lighter green
+                                    dbc.Tooltip(id="positive-reviews-tooltip", target="positive-reviews-counter", placement="top")
                                 ], width=3),
                                 dbc.Col([
                                     dbc.Card([
                                         dbc.CardBody([
                                             html.H4("Neutral Reviews", className="text-center mb-2", style={'color': 'white'}),
-                                            html.H2(id='neutral-reviews-counter', className="text-center mb-2", style={'color': '#f1c40f', 'fontSize': '2rem'}),
+                                            html.H2(id='neutral-reviews-counter', className="text-center mb-2", style={'color': '#f1c40f', 'fontSize': '2rem', 'cursor': 'pointer'}),
                                             html.A(
                                                 "View Attributes",
                                                 href="#tabs",
@@ -457,13 +571,14 @@ app.layout = dbc.Container([
                                                 }
                                             )
                                         ])
-                                    ], style={**CARD_STYLE, 'backgroundColor': '#4a3e2d'})  # Lighter yellow
+                                    ], style={**CARD_STYLE, 'backgroundColor': '#4a3e2d'}),  # Lighter yellow
+                                    dbc.Tooltip(id="neutral-reviews-tooltip", target="neutral-reviews-counter", placement="top")
                                 ], width=3),
                                 dbc.Col([
                                     dbc.Card([
                                         dbc.CardBody([
                                             html.H4("Negative Reviews", className="text-center mb-2", style={'color': 'white'}),
-                                            html.H2(id='negative-reviews-counter', className="text-center mb-2", style={'color': '#e74c3c', 'fontSize': '2rem'}),
+                                            html.H2(id='negative-reviews-counter', className="text-center mb-2", style={'color': '#e74c3c', 'fontSize': '2rem', 'cursor': 'pointer'}),
                                             html.A(
                                                 "Summary",
                                                 href="#tabs",
@@ -477,7 +592,8 @@ app.layout = dbc.Container([
                                                 }
                                             )
                                         ])
-                                    ], style={**CARD_STYLE, 'backgroundColor': '#4a2d2d'})  # Lighter red
+                                    ], style={**CARD_STYLE, 'backgroundColor': '#4a2d2d'}),  # Lighter red
+                                    dbc.Tooltip(id="negative-reviews-tooltip", target="negative-reviews-counter", placement="top")
                                 ], width=3)
                             ], className="mb-4"),
                             html.Div(id='metrics-container', className="d-flex flex-column gap-3 text-light")
@@ -655,8 +771,8 @@ def update_visuals(n_clicks, category, brand):
             empty_fig,  # pricing-comparison
             None,  # positive-wordcloud
             None,  # negative-wordcloud
-            empty_fig,  # brand-positive-wordcloud
-            empty_fig,  # brand-negative-wordcloud
+            None,  # brand-positive-wordcloud
+            None,  # brand-negative-wordcloud
             "0",  # total-reviews-counter
             "0",  # positive-reviews-counter
             "0",  # neutral-reviews-counter
@@ -681,8 +797,8 @@ def update_visuals(n_clicks, category, brand):
                 empty_fig,  # pricing-comparison
                 None,  # positive-wordcloud
                 None,  # negative-wordcloud
-                empty_fig,  # brand-positive-wordcloud
-                empty_fig,  # brand-negative-wordcloud
+                None,  # brand-positive-wordcloud
+                None,  # brand-negative-wordcloud
                 "0",  # total-reviews-counter
                 "0",  # positive-reviews-counter
                 "0",  # neutral-reviews-counter
@@ -721,10 +837,10 @@ def update_visuals(n_clicks, category, brand):
                 y=0.95
             )
         )
-        
+
         # Generate word clouds
         def generate_wordcloud(texts, max_words=100, background_color='#2d3436'):
-            if not texts:
+            if not texts or all(pd.isna(texts)):
                 return None
             try:
                 # Clean and convert texts to strings
@@ -763,21 +879,21 @@ def update_visuals(n_clicks, category, brand):
             except Exception as e:
                 print(f"Error generating wordcloud: {str(e)}")
                 return None
-        
+
         # Get reviews from all other brands in the selected category
         category_data = data[data['category'] == category]  # Filter by selected category
         other_brands_data = category_data[category_data['brand'] != brand]  # Filter out selected brand
         
         # Generate word clouds for competitor analysis
-        positive_reviews = other_brands_data['positive_feature_list'].str.split(',').explode().tolist()
-        negative_reviews = other_brands_data['negative_feature_list'].str.split(',').explode().tolist()
+        positive_reviews = other_brands_data['positive_feature_list'].dropna().tolist()
+        negative_reviews = other_brands_data['negative_feature_list'].dropna().tolist()
         
         positive_wordcloud = generate_wordcloud(positive_reviews, background_color='white')  # White background
         negative_wordcloud = generate_wordcloud(negative_reviews, background_color='#636e72')  # Grey background
         
         # Generate word clouds for brand analysis
-        brand_positive_reviews = filtered_data['positive_feature_list'].str.split(',').explode().tolist()
-        brand_negative_reviews = filtered_data['negative_feature_list'].str.split(',').explode().tolist()
+        brand_positive_reviews = filtered_data['positive_feature_list'].dropna().tolist()
+        brand_negative_reviews = filtered_data['negative_feature_list'].dropna().tolist()
         
         brand_positive_wordcloud = generate_wordcloud(brand_positive_reviews, background_color='white')  # White background
         brand_negative_wordcloud = generate_wordcloud(brand_negative_reviews, background_color='#636e72')  # Grey background
@@ -942,8 +1058,8 @@ def update_visuals(n_clicks, category, brand):
                 bgcolor='rgba(0,0,0,0)',
                 bordercolor='rgba(0,0,0,0)'
             ),
-            uniformtext_minsize=8,  # Minimum font size for labels
-            uniformtext_mode='hide'  # Hide labels if they don't fit
+            uniformtext_minsize=12,  # Minimum font size for labels
+            uniformtext_mode='show'  # Hide labels if they don't fit
         )
 
         # Calculate metrics
@@ -1007,8 +1123,8 @@ def update_visuals(n_clicks, category, brand):
             empty_fig,  # pricing-comparison
             None,  # positive-wordcloud
             None,  # negative-wordcloud
-            empty_fig,  # brand-positive-wordcloud
-            empty_fig,  # brand-negative-wordcloud
+            None,  # brand-positive-wordcloud
+            None,  # brand-negative-wordcloud
             "0",  # total-reviews-counter
             "0",  # positive-reviews-counter
             "0",  # neutral-reviews-counter
@@ -1048,46 +1164,162 @@ def toggle_ai_modal(open_clicks, close_clicks, is_open):
         return not is_open
     return is_open
 
-# Add callback to handle loading animation and messages
+# Update the callback content for brand-specific tips and next steps
 @app.callback(
-    [Output("ai-loading-message", "children"),
+    [Output("ai-analysis-content", "children"),
+     Output("ai-loading-message", "children"),
      Output("ai-loading-spinner", "children"),
-     Output("ai-analysis-content", "children")],
-    [Input("ai-agent-modal", "is_open"),
-     Input('category-filter', 'value'),
-     Input('brand-filter', 'value')]
+     Output("email-analysis", "children"),
+     Output("email-analysis", "style"),
+     Output("email-analysis", "className")],
+    [Input("recommendations-button", "n_clicks"),
+     Input("analyze-button", "n_clicks")],
+    [State('category-filter', 'value'),
+     State('brand-filter', 'value')],
+    prevent_initial_call=True
 )
-def update_ai_loading(is_open, category, brand):
-    if not is_open:
-        return "", "", []
+def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return [], "", None, None, {'display': 'none'}, 'email-analysis-container'
     
-    # Initial loading state
-    if is_open:
-        # Show loading spinner and initial message
-        loading_spinner = dbc.Spinner(
-            color="primary",
-            size="lg",
-            type="grow",
-            fullscreen=False,
-            spinner_style={"width": "3rem", "height": "3rem"}
-        )
-        
-        # Return initial loading state
-        return "Analyzing...", loading_spinner, []
+    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
     
-    # After 5 seconds, show connecting message
-    #time.sleep(5)
-    loading_spinner = dbc.Spinner(
-        color="primary",
-        size="lg",
-        type="grow",
-        fullscreen=False,
-        spinner_style={"width": "3rem", "height": "3rem"}
-    )
-    
-    #time.sleep(3)
     try:
         # Filter data
+        filtered_data = data[(data['category'] == category) & (data['brand'] == brand)]
+        
+        if button_id == "recommendations-button":
+            # Brand-specific quick tips
+            if brand == "Barbie":
+                recommendations_content = html.Div([
+                    html.H6("Quick Tips", style={'color': 'white', 'marginBottom': '15px'}),
+                    html.Ul([
+                        html.Li("Positive customer experience trends indicate strong brand loyalty. Consider expanding the customer engagement program.", 
+                               style={'color': 'white', 'marginBottom': '10px'})
+                    ])
+                ])
+            elif brand == "LEGO":
+                recommendations_content = html.Div([
+                    html.H6("Quick Tips", style={'color': 'white', 'marginBottom': '15px'}),
+                    html.Ul([
+                        html.Li("Increased customer concerns about product quality. Review quality control processes at manufacturing facilities.", 
+                               style={'color': 'white', 'marginBottom': '10px'})
+                    ])
+                ])
+            else:
+                # Default recommendations for other brands
+                recommendations_content = html.Div([
+                    html.H6("Quick Tips", style={'color': 'white', 'marginBottom': '15px'}),
+                    html.Ul([
+                        html.Li("Monitor customer feedback trends", 
+                               style={'color': 'white', 'marginBottom': '10px'})
+                    ])
+                ])
+            
+            return recommendations_content, "", None, None, {'display': 'none'}, 'email-analysis-container'
+            
+        elif button_id == "analyze-button":
+            # Brand-specific next steps
+            if brand == "Barbie":
+                analysis_content = [
+                    html.Div([
+                        html.H6("Next Steps:", style={'color': 'white', 'marginBottom': '15px'}),
+                        html.Ul([
+                            html.Li("Prepare for upcoming STAR WARS merchandise sale - coordinate with marketing team", 
+                                   style={'color': 'white', 'marginBottom': '10px'}),
+                            html.Li("Review inventory levels for STAR WARS collection", 
+                                   style={'color': 'white', 'marginBottom': '10px'}),
+                            html.Li("Update promotional materials for the sale", 
+                                   style={'color': 'white', 'marginBottom': '10px'})
+                        ])
+                    ])
+                ]
+                
+                email_content = html.Div([
+                    html.H6("Email Analysis", style={'color': 'white', 'marginBottom': '15px'}),
+                    html.Div([
+                        html.P("Subject: STAR WARS Merchandise Sale Planning", style={'color': 'white', 'fontWeight': 'bold', 'marginBottom': '10px'}),
+                        html.P("Dear Brand Manager,", style={'color': 'white', 'marginBottom': '10px'}),
+                        html.P("We need to prepare for the upcoming STAR WARS merchandise sale. Please coordinate with the marketing team to ensure all promotional materials are ready and inventory levels are sufficient. This is a key opportunity to boost sales and engage with our STAR WARS fan base.", style={'color': 'white', 'marginBottom': '10px'}),
+                        html.P("Best regards,", style={'color': 'white', 'marginBottom': '5px'}),
+                        html.P("AI Brand Analyst", style={'color': 'white'})
+                    ], className="email-analysis-content")
+                ])
+                
+            elif brand == "LEGO":
+                analysis_content = [
+                    html.Div([
+                        html.H6("Next Steps:", style={'color': 'white', 'marginBottom': '15px'}),
+                        html.Ul([
+                            html.Li("Send urgent communication to all packing and distribution centers", 
+                                   style={'color': 'white', 'marginBottom': '10px'}),
+                            html.Li("Review current packaging standards", 
+                                   style={'color': 'white', 'marginBottom': '10px'}),
+                            html.Li("Implement additional quality checks", 
+                                   style={'color': 'white', 'marginBottom': '10px'})
+                        ])
+                    ])
+                ]
+                
+                email_content = html.Div([
+                    html.H6("Email Analysis", style={'color': 'white', 'marginBottom': '15px'}),
+                    html.Div([
+                        html.P("Subject: Urgent: Packaging Quality Concerns", style={'color': 'white', 'fontWeight': 'bold', 'marginBottom': '10px'}),
+                        html.P("Dear Brand Manager,", style={'color': 'white', 'marginBottom': '10px'}),
+                        html.P("Recent customer feedback indicates an increase in damaged boxes and packaging issues. Please send an immediate communication to all packing and distribution centers to address these concerns. We need to review our current packaging standards and implement additional quality checks to maintain our brand's reputation for quality.", style={'color': 'white', 'marginBottom': '10px'}),
+                        html.P("Best regards,", style={'color': 'white', 'marginBottom': '5px'}),
+                        html.P("AI Brand Analyst", style={'color': 'white'})
+                    ], className="email-analysis-content")
+                ])
+                
+            else:
+                # Default content for other brands
+                analysis_content = [
+                    html.Div([
+                        html.H6("Next Steps:", style={'color': 'white', 'marginBottom': '15px'}),
+                        html.Ul([
+                            html.Li("Monitor customer feedback trends", style={'color': 'white', 'marginBottom': '10px'}),
+                            html.Li("Review current marketing strategies", style={'color': 'white', 'marginBottom': '10px'}),
+                            html.Li("Analyze competitor activities", style={'color': 'white', 'marginBottom': '10px'})
+                        ])
+                    ])
+                ]
+                
+                email_content = html.Div([
+                    html.H6("Email Analysis", style={'color': 'white', 'marginBottom': '15px'}),
+                    html.Div([
+                        html.P("Subject: General Brand Update", style={'color': 'white', 'fontWeight': 'bold', 'marginBottom': '10px'}),
+                        html.P("Dear Brand Manager,", style={'color': 'white', 'marginBottom': '10px'}),
+                        html.P("Please review the current brand performance metrics and consider implementing the suggested next steps to improve customer satisfaction and market position.", style={'color': 'white', 'marginBottom': '10px'}),
+                        html.P("Best regards,", style={'color': 'white', 'marginBottom': '5px'}),
+                        html.P("AI Brand Analyst", style={'color': 'white'})
+                    ], className="email-analysis-content")
+                ])
+            
+            return analysis_content, "", None, email_content, {
+                'marginTop': '20px',
+                'padding': '20px',
+                'backgroundColor': '#636e72',
+                'borderRadius': '5px',
+                'display': 'block'
+            }, 'email-analysis-container show'
+            
+    except Exception as e:
+        return html.P(f"Error: {str(e)}", style={'color': 'white'}), "", None, None, {'display': 'none'}, 'email-analysis-container'
+
+# Update the tooltip callback to show multiple top features
+@app.callback(
+    [Output("total-reviews-tooltip", "children"),
+     Output("positive-reviews-tooltip", "children"),
+     Output("neutral-reviews-tooltip", "children"),
+     Output("negative-reviews-tooltip", "children")],
+    [Input('category-filter', 'value'),
+     Input('brand-filter', 'value')]
+)
+def update_review_summaries(category, brand):
+    try:
+        # Filter data for the selected brand and category
         filtered_data = data[(data['category'] == category) & (data['brand'] == brand)]
         
         # Calculate metrics
@@ -1096,29 +1328,118 @@ def update_ai_loading(is_open, category, brand):
         neutral_reviews = len(filtered_data[filtered_data['sentiment_score'] == 3])
         negative_reviews = len(filtered_data[filtered_data['sentiment_score'] < 3])
         
-        # Create analysis content
-        analysis_content = [
-            html.Div([
-                html.H6("Key Insights:", style={'color': 'white', 'marginBottom': '15px'}),
-                html.Ul([
-                    html.Li(f"Total Reviews: {total_reviews:,}", style={'color': 'white', 'marginBottom': '10px'}),
-                    html.Li(f"Positive Sentiment: {positive_reviews/total_reviews*100:.1f}%", style={'color': 'white', 'marginBottom': '10px'}),
-                    html.Li(f"Neutral Sentiment: {neutral_reviews/total_reviews*100:.1f}%", style={'color': 'white', 'marginBottom': '10px'}),
-                    html.Li(f"Negative Sentiment: {negative_reviews/total_reviews*100:.1f}%", style={'color': 'white', 'marginBottom': '10px'})
-                ]),
-                html.H6("Recommendations:", style={'color': 'white', 'marginTop': '20px', 'marginBottom': '15px'}),
-                html.Ul([
-                    html.Li("Monitor negative sentiment trends closely", style={'color': 'white', 'marginBottom': '10px'}),
-                    html.Li("Focus on maintaining positive customer experiences", style={'color': 'white', 'marginBottom': '10px'}),
-                    html.Li("Address any recurring issues in negative reviews", style={'color': 'white', 'marginBottom': '10px'})
-                ])
-            ])
-        ]
+        # Common tooltip styles
+        tooltip_header_style = {
+            'color': 'white',
+            'marginBottom': '15px',
+            'fontSize': '1.1rem',
+            'fontWeight': 'bold',
+            'borderBottom': '2px solid #636e72',
+            'paddingBottom': '5px'
+        }
         
-        return "", "", analysis_content
+        tooltip_text_style = {
+            'color': '#b2bec3',
+            'marginBottom': '8px',
+            'fontSize': '0.9rem',
+            'display': 'flex',
+            'justifyContent': 'space-between',
+            'alignItems': 'center'
+        }
+        
+        tooltip_container_style = {
+            'backgroundColor': '#1e272e',
+            'padding': '15px',
+            'borderRadius': '8px',
+            'boxShadow': '0 4px 6px rgba(0, 0, 0, 0.2)',
+            'border': '1px solid #636e72',
+            'minWidth': '250px'
+        }
+
+        # Function to get top features
+        def get_top_features(data, feature_list, n=3):
+            features = data[feature_list].str.split(',').explode().str.strip()
+            return features.value_counts().head(n).index.tolist()
+        
+        # Create summary tooltips
+        total_summary = html.Div([
+            html.H6("Total Reviews Summary", style=tooltip_header_style),
+            html.Div([
+                html.Span("Total Reviews:", style={'color': '#b2bec3'}),
+                html.Span(f"{total_reviews:,}", style={'color': '#3498db', 'fontWeight': 'bold'})
+            ], style=tooltip_text_style),
+            html.Div([
+                html.Span("Average Rating:", style={'color': '#b2bec3'}),
+                html.Span(f"{filtered_data['rating'].mean():.1f}/5.0", style={'color': '#3498db', 'fontWeight': 'bold'})
+            ], style=tooltip_text_style),
+            html.Div([
+                html.Span("This Month:", style={'color': '#b2bec3'}),
+                html.Span(f"{len(filtered_data[filtered_data['date'] >= pd.Timestamp.now() - pd.DateOffset(months=1)]):,}", style={'color': '#3498db', 'fontWeight': 'bold'})
+            ], style=tooltip_text_style)
+        ], style=tooltip_container_style)
+        
+        positive_summary = html.Div([
+            html.H6("Positive Reviews Summary", style=tooltip_header_style),
+            html.Div([
+                html.Span("Positive Reviews:", style={'color': '#b2bec3'}),
+                html.Span(f"{positive_reviews:,}", style={'color': '#2ecc71', 'fontWeight': 'bold'})
+            ], style=tooltip_text_style),
+            html.Div([
+                html.Span("Positive Rate:", style={'color': '#b2bec3'}),
+                html.Span(f"{positive_reviews/total_reviews*100:.1f}%", style={'color': '#2ecc71', 'fontWeight': 'bold'})
+            ], style=tooltip_text_style),
+            html.Div([
+                html.Span("Top Features:", style={'color': '#b2bec3'}),
+                html.Span(
+                    ", ".join(get_top_features(filtered_data[filtered_data['sentiment_score'] > 3], 'positive_feature_list')),
+                    style={'color': '#2ecc71', 'fontWeight': 'bold', 'textAlign': 'right', 'maxWidth': '150px'}
+                )
+            ], style=tooltip_text_style)
+        ], style=tooltip_container_style)
+        
+        neutral_summary = html.Div([
+            html.H6("Neutral Reviews Summary", style=tooltip_header_style),
+            html.Div([
+                html.Span("Neutral Reviews:", style={'color': '#b2bec3'}),
+                html.Span(f"{neutral_reviews:,}", style={'color': '#f1c40f', 'fontWeight': 'bold'})
+            ], style=tooltip_text_style),
+            html.Div([
+                html.Span("Neutral Rate:", style={'color': '#b2bec3'}),
+                html.Span(f"{neutral_reviews/total_reviews*100:.1f}%", style={'color': '#f1c40f', 'fontWeight': 'bold'})
+            ], style=tooltip_text_style),
+            html.Div([
+                html.Span("Top Features:", style={'color': '#b2bec3'}),
+                html.Span(
+                    ", ".join(get_top_features(filtered_data[filtered_data['sentiment_score'] == 3], 'positive_feature_list')),
+                    style={'color': '#f1c40f', 'fontWeight': 'bold', 'textAlign': 'right', 'maxWidth': '150px'}
+                )
+            ], style=tooltip_text_style)
+        ], style=tooltip_container_style)
+        
+        negative_summary = html.Div([
+            html.H6("Negative Reviews Summary", style=tooltip_header_style),
+            html.Div([
+                html.Span("Negative Reviews:", style={'color': '#b2bec3'}),
+                html.Span(f"{negative_reviews:,}", style={'color': '#e74c3c', 'fontWeight': 'bold'})
+            ], style=tooltip_text_style),
+            html.Div([
+                html.Span("Negative Rate:", style={'color': '#b2bec3'}),
+                html.Span(f"{negative_reviews/total_reviews*100:.1f}%", style={'color': '#e74c3c', 'fontWeight': 'bold'})
+            ], style=tooltip_text_style),
+            html.Div([
+                html.Span("Top Issues:", style={'color': '#b2bec3'}),
+                html.Span(
+                    ", ".join(get_top_features(filtered_data[filtered_data['sentiment_score'] < 3], 'negative_feature_list')),
+                    style={'color': '#e74c3c', 'fontWeight': 'bold', 'textAlign': 'right', 'maxWidth': '150px'}
+                )
+            ], style=tooltip_text_style)
+        ], style=tooltip_container_style)
+        
+        return total_summary, positive_summary, neutral_summary, negative_summary
         
     except Exception as e:
-        return "", "", [html.P(f"Error generating analysis: {str(e)}", style={'color': 'white'})]
+        error_msg = html.P(f"Error generating summary: {str(e)}", style={'color': 'white'})
+        return error_msg, error_msg, error_msg, error_msg
 
 if __name__ == "__main__":
     app.run(debug=True)

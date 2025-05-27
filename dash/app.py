@@ -1077,7 +1077,7 @@ def update_visuals(n_clicks, category, brand):
             sentiment_stats[sentiment] = {
                 'mean': mean,
                 'std': std,
-                'threshold': mean + (2 * std)
+                'threshold': mean + (1.5 * std)
             }
 
         # Define colors for sentiment categories

@@ -35,12 +35,12 @@ def sqlQuery(query: str) -> pd.DataFrame:
             cursor.execute(query)
             return cursor.fetchall_arrow().to_pandas()
 try:
-    #data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
+    data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
 
-    # #Load data from CSV
+    # Load data from CSV
     current_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(current_dir, 'app_data', 'brand_insights_data.csv')
-    data = pd.read_csv(data_path)
+    #data = pd.read_csv(data_path)
     print(f"Data shape: {data.shape}")
     print(f"Data columns: {data.columns}")
     

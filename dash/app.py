@@ -78,6 +78,8 @@ try:
     
     # Apply sentiment mapping and fill any missing values based on sentiment_score
     data['sentiment'] = data['sentiment'].map(sentiment_mapping)
+ 
+
     data.loc[data['sentiment'].isna(), 'sentiment'] = data.loc[data['sentiment'].isna(), 'sentiment_score'].apply(
         lambda x: 'Love' if x == 5 else 'Great' if x == 4 else 'Fine' if x == 3 else 'Disappointed' if x == 2 else 'Bad' if x == 1 else 'Neutral'
     )
@@ -1263,7 +1265,7 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                     html.Div([
                         html.P("Subject: Barbie Movie Merchandise Sale Planning", style={'color': 'white', 'fontWeight': 'bold', 'marginBottom': '10px'}),
                         html.P("Dear Brand Manager,", style={'color': 'white', 'marginBottom': '10px'}),
-                        html.P("We need to prepare for the upcoming Barbie Movie merchandise sale. Please coordinate with the marketing team to ensure all promotional materials are ready and inventory levels are sufficient. This is a key opportunity to boost sales and engage with our STAR WARS fan base.", style={'color': 'white', 'marginBottom': '10px'}),
+                        html.P("We need to prepare for the upcoming Barbie Movie merchandise sale. Please coordinate with the marketing team to ensure all promotional materials are ready and inventory levels are sufficient. This is a key opportunity to boost sales and engage with our Barbie fan base.", style={'color': 'white', 'marginBottom': '10px'}),
                         html.P("Best regards,", style={'color': 'white', 'marginBottom': '5px'}),
                         html.P("AI Brand Analyst", style={'color': 'white'})
                     ], className="email-analysis-content")

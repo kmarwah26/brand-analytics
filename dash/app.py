@@ -15,27 +15,32 @@ from databricks import sql
 from databricks.sdk.core import Config
 import time
 
-# # Ensure environment variable is set correctly
-# assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
+print(".....")
+print(os.getcwd())
 
-# # Load data from SQL
-# def sqlQuery(query: str) -> pd.DataFrame:
-#     """Execute a SQL query and return the result as a pandas DataFrame."""
-#     cfg = Config()  # Pull environment variables for auth
-#     with sql.connect(
-#         server_hostname=cfg.host,
-#         http_path=f"/sql/1.0/warehouses/{os.getenv('DATABRICKS_WAREHOUSE_ID')}",
-#         credentials_provider=lambda: cfg.authenticate
-#     ) as connection:
-#         with connection.cursor() as cursor:
-#             cursor.execute(query)
-#             return cursor.fetchall_arrow().to_pandas()
+# Ensure environment variable is set correctly
+assert os.getenv('DATABRICKS_WAREHOUSE_ID') 
+#DATABRICKS_WAREHOUSE_ID = "148ccb90800933a1"
+ #"DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
 
-# data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights")
-
-# Load data from CSV
+# Load data from SQL
+def sqlQuery(query: str) -> pd.DataFrame:
+    """Execute a SQL query and return the result as a pandas DataFrame."""
+    cfg = Config()  # Pull environment variables for auth
+    with sql.connect(
+        server_hostname=cfg.host,
+        http_path=f"/sql/1.0/warehouses/{os.getenv('DATABRICKS_WAREHOUSE_ID')}",
+        credentials_provider=lambda: cfg.authenticate
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query)
+            return cursor.fetchall_arrow().to_pandas()
 try:
-    data = pd.read_csv('app_data/brand_insights_data.csv')
+    data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
+
+    # # Load data from CSV
+
+    #data = pd.read_csv('/app/python/source_code/app_data/brand_insights_data.csv')
     print(f"Data shape: {data.shape}")
     print(f"Data columns: {data.columns}")
     
@@ -225,11 +230,6 @@ app = dash.Dash(__name__,
                 external_stylesheets=[dbc.themes.DARKLY],
                 assets_folder='assets')  # Specify assets folder
 
-# Create assets folder if it doesn't exist
-assets_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
-if not os.path.exists(assets_folder):
-    os.makedirs(assets_folder)
-
 # Custom styles
 CARD_STYLE = {
     'backgroundColor': '#2d3436',  # Lighter dark gray
@@ -252,7 +252,7 @@ COUNTER_BOX_STYLE = {
     'boxShadow': '0 4px 6px rgba(0, 0, 0, 0.2)'
 }
 
-# Add custom CSS for animations
+# Add custom CSS for animationsee
 app.index_string = '''
 <!DOCTYPE html>
 <html>
@@ -1442,4 +1442,10 @@ def update_review_summaries(category, brand):
         return error_msg, error_msg, error_msg, error_msg
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Check if running in Databricks
+    if 'dbutils' in globals():
+        # For Databricks environment
+        app.run(host='0.0.0.0', port=8050, debug=True, use_reloader=False)
+    else:
+        # For local environment
+        app.run(debug=True)

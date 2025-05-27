@@ -15,13 +15,12 @@ from databricks import sql
 from databricks.sdk.core import Config
 import time
 
-print(".....")
-print(os.getcwd())
+# print(".....")
+# print(os.getcwd())
 
 # Ensure environment variable is set correctly
 assert os.getenv('DATABRICKS_WAREHOUSE_ID') 
-#DATABRICKS_WAREHOUSE_ID = "148ccb90800933a1"
- #"DATABRICKS_WAREHOUSE_ID must be set in app.yaml."
+
 
 # Load data from SQL
 def sqlQuery(query: str) -> pd.DataFrame:
@@ -38,14 +37,50 @@ def sqlQuery(query: str) -> pd.DataFrame:
 try:
     data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
 
-    # # Load data from CSV
-
-    #data = pd.read_csv('/app/python/source_code/app_data/brand_insights_data.csv')
+    # #Load data from CSV
+    # current_dir = os.path.dirname(os.path.abspath(__file__))
+    # data_path = os.path.join(current_dir, 'app_data', 'brand_insights_data.csv')
+    # data = pd.read_csv(data_path)
     print(f"Data shape: {data.shape}")
     print(f"Data columns: {data.columns}")
     
     # Convert the date column to a datetime object
     data['date'] = pd.to_datetime(data['date'], errors='coerce')
+    
+    # Clean up sentiment column
+    # Standardize sentiment values
+    sentiment_mapping = {
+        'positive': 'Positive',
+        'POSITIVE': 'Positive',
+        'Positive': 'Positive',
+        'negative': 'Negative',
+        'NEGATIVE': 'Negative',
+        'Negative': 'Negative',
+        'neutral': 'Neutral',
+        'NEUTRAL': 'Neutral',
+        'Neutral': 'Neutral',
+        'love': 'Love',
+        'LOVE': 'Love',
+        'Love': 'Love',
+        'great': 'Great',
+        'GREAT': 'Great',
+        'Great': 'Great',
+        'fine': 'Fine',
+        'FINE': 'Fine',
+        'Fine': 'Fine',
+        'disappointed': 'Disappointed',
+        'DISAPPOINTED': 'Disappointed',
+        'Disappointed': 'Disappointed',
+        'bad': 'Bad',
+        'BAD': 'Bad',
+        'Bad': 'Bad'
+    }
+    
+    # Apply sentiment mapping and fill any missing values based on sentiment_score
+    data['sentiment'] = data['sentiment'].map(sentiment_mapping)
+    data.loc[data['sentiment'].isna(), 'sentiment'] = data.loc[data['sentiment'].isna(), 'sentiment_score'].apply(
+        lambda x: 'Love' if x == 5 else 'Great' if x == 4 else 'Fine' if x == 3 else 'Disappointed' if x == 2 else 'Bad' if x == 1 else 'Neutral'
+    )
     
     # Filter out specific brands
     excluded_brands = [
@@ -73,12 +108,14 @@ try:
         'iFixit',
         'Bayco',
         'Gorilla',
-        'DEWALT'
+        'DEWALT',
+        'Mattel',
+        'Mattel Games'
     ]
     data = data[~data['brand'].isin(excluded_brands)]
     
-    # Combine Mattel brands
-    data['brand'] = data['brand'].replace('Mattel Games', 'Mattel')
+    # Remove the Mattel brand combination since we're excluding Mattel
+    # data['brand'] = data['brand'].replace('Mattel Games', 'Mattel')
     
     # Add negative reviews for LEGO across different months
     april_2023 = pd.Timestamp('2023-04-15')
@@ -449,7 +486,7 @@ app.layout = dbc.Container([
                             dcc.Dropdown(
                                 id='category-filter',
                                 options=[{'label': cat, 'value': cat} for cat in sorted(data['category'].unique())],
-                                value=None,  # Removed default value
+                                value= None,  # Set default value
                                 className="mb-3"
                             )
                         ], width=6),
@@ -482,7 +519,7 @@ app.layout = dbc.Container([
                             html.P("Overall Brand Health Score", className="text-center text-light")
                         ])
                     ], style={**CARD_STYLE, 'backgroundColor': '#2d4a3e'})  # Lighter green
-                ], width=4),
+                ], width=3),
                 dbc.Col([
                     dbc.Card([
                         dbc.CardBody([
@@ -491,7 +528,7 @@ app.layout = dbc.Container([
                             html.P("Market Share & Position", className="text-center text-light")
                         ])
                     ], style={**CARD_STYLE, 'backgroundColor': '#2d3e4a'})  # Lighter blue
-                ], width=4),
+                ], width=3),
                 dbc.Col([
                     dbc.Card([
                         dbc.CardBody([
@@ -500,7 +537,16 @@ app.layout = dbc.Container([
                             html.P("Product Performance Score", className="text-center text-light")
                         ])
                     ], style={**CARD_STYLE, 'backgroundColor': '#3e2d4a'})  # Lighter purple
-                ], width=4)
+                ], width=3),
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardBody([
+                            html.H3("Average Rating", className="text-center mb-3", style={'color': 'white'}),
+                            html.H2(id='average-rating', className="text-center mb-2", style={'color': '#f1c40f', 'fontSize': '2.5rem'}),
+                            html.P("Customer Satisfaction Score", className="text-center text-light")
+                        ])
+                    ], style={**CARD_STYLE, 'backgroundColor': '#4a3e2d'})  # Lighter yellow
+                ], width=3)
             ], className="mb-4"),
             
             # Charts Row
@@ -515,19 +561,7 @@ app.layout = dbc.Container([
                                     dbc.Card([
                                         dbc.CardBody([
                                             html.H4("Total Reviews", className="text-center mb-2", style={'color': 'white'}),
-                                            html.H2(id='total-reviews-counter', className="text-center mb-2", style={'color': '#3498db', 'fontSize': '2rem', 'cursor': 'pointer'}),
-                                            html.A(
-                                                "Competitive Trends",
-                                                href="#positive-wordcloud",
-                                                id="total-reviews-link",
-                                                className="text-center d-block",
-                                                style={
-                                                    'color': '#3498db',
-                                                    'textDecoration': 'none',
-                                                    'fontSize': '0.9rem',
-                                                    'marginTop': '5px'
-                                                }
-                                            )
+                                            html.H2(id='total-reviews-counter', className="text-center mb-2", style={'color': '#3498db', 'fontSize': '2rem', 'cursor': 'pointer'})
                                         ])
                                     ], style={**CARD_STYLE, 'backgroundColor': '#2d3e4a'}),  # Lighter blue
                                     dbc.Tooltip(id="total-reviews-tooltip", target="total-reviews-counter", placement="top")
@@ -536,19 +570,7 @@ app.layout = dbc.Container([
                                     dbc.Card([
                                         dbc.CardBody([
                                             html.H4("Positive Reviews", className="text-center mb-2", style={'color': 'white'}),
-                                            html.H2(id='positive-reviews-counter', className="text-center mb-2", style={'color': '#2ecc71', 'fontSize': '2rem', 'cursor': 'pointer'}),
-                                            html.A(
-                                                "Trends",
-                                                href="#tabs",
-                                                id="positive-reviews-link",
-                                                className="text-center d-block",
-                                                style={
-                                                    'color': '#2ecc71',
-                                                    'textDecoration': 'none',
-                                                    'fontSize': '0.9rem',
-                                                    'marginTop': '5px'
-                                                }
-                                            )
+                                            html.H2(id='positive-reviews-counter', className="text-center mb-2", style={'color': '#2ecc71', 'fontSize': '2rem', 'cursor': 'pointer'})
                                         ])
                                     ], style={**CARD_STYLE, 'backgroundColor': '#2d4a3e'}),  # Lighter green
                                     dbc.Tooltip(id="positive-reviews-tooltip", target="positive-reviews-counter", placement="top")
@@ -557,19 +579,7 @@ app.layout = dbc.Container([
                                     dbc.Card([
                                         dbc.CardBody([
                                             html.H4("Neutral Reviews", className="text-center mb-2", style={'color': 'white'}),
-                                            html.H2(id='neutral-reviews-counter', className="text-center mb-2", style={'color': '#f1c40f', 'fontSize': '2rem', 'cursor': 'pointer'}),
-                                            html.A(
-                                                "View Attributes",
-                                                href="#tabs",
-                                                id="neutral-reviews-link",
-                                                className="text-center d-block",
-                                                style={
-                                                    'color': '#f1c40f',
-                                                    'textDecoration': 'none',
-                                                    'fontSize': '0.9rem',
-                                                    'marginTop': '5px'
-                                                }
-                                            )
+                                            html.H2(id='neutral-reviews-counter', className="text-center mb-2", style={'color': '#f1c40f', 'fontSize': '2rem', 'cursor': 'pointer'})
                                         ])
                                     ], style={**CARD_STYLE, 'backgroundColor': '#4a3e2d'}),  # Lighter yellow
                                     dbc.Tooltip(id="neutral-reviews-tooltip", target="neutral-reviews-counter", placement="top")
@@ -578,25 +588,12 @@ app.layout = dbc.Container([
                                     dbc.Card([
                                         dbc.CardBody([
                                             html.H4("Negative Reviews", className="text-center mb-2", style={'color': 'white'}),
-                                            html.H2(id='negative-reviews-counter', className="text-center mb-2", style={'color': '#e74c3c', 'fontSize': '2rem', 'cursor': 'pointer'}),
-                                            html.A(
-                                                "Summary",
-                                                href="#tabs",
-                                                id="negative-reviews-link",
-                                                className="text-center d-block",
-                                                style={
-                                                    'color': '#e74c3c',
-                                                    'textDecoration': 'none',
-                                                    'fontSize': '0.9rem',
-                                                    'marginTop': '5px'
-                                                }
-                                            )
+                                            html.H2(id='negative-reviews-counter', className="text-center mb-2", style={'color': '#e74c3c', 'fontSize': '2rem', 'cursor': 'pointer'})
                                         ])
                                     ], style={**CARD_STYLE, 'backgroundColor': '#4a2d2d'}),  # Lighter red
                                     dbc.Tooltip(id="negative-reviews-tooltip", target="negative-reviews-counter", placement="top")
                                 ], width=3)
-                            ], className="mb-4"),
-                            html.Div(id='metrics-container', className="d-flex flex-column gap-3 text-light")
+                            ], className="mb-4")
                         ])
                     ], style=CARD_STYLE)
                 ], width=12)
@@ -728,10 +725,10 @@ def update_brand_options(selected_category):
 @app.callback(
     Output('sentiment-treemap', 'figure'),
     Output('monthly-reviews-chart', 'figure'),
-    Output('metrics-container', 'children'),
     Output('brand-health-score', 'children'),
     Output('competitive-score', 'children'),
     Output('product-score', 'children'),
+    Output('average-rating', 'children'),
     Output('market-share-trend', 'figure'),
     Output('pricing-comparison', 'figure'),
     Output('positive-wordcloud', 'src'),
@@ -763,10 +760,10 @@ def update_visuals(n_clicks, category, brand):
         return (
             empty_fig,  # sentiment-treemap
             empty_fig,  # monthly-reviews-chart
-            [],  # metrics-container
             "0%",  # brand-health-score
             "0%",  # competitive-score
             "0%",  # product-score
+            "0.0",  # average-rating
             empty_fig,  # market-share-trend
             empty_fig,  # pricing-comparison
             None,  # positive-wordcloud
@@ -789,10 +786,10 @@ def update_visuals(n_clicks, category, brand):
             return (
                 empty_fig,  # sentiment-treemap
                 empty_fig,  # monthly-reviews-chart
-                [],  # metrics-container
                 "0%",  # brand-health-score
                 "0%",  # competitive-score
                 "0%",  # product-score
+                "0.0",  # average-rating
                 empty_fig,  # market-share-trend
                 empty_fig,  # pricing-comparison
                 None,  # positive-wordcloud
@@ -805,36 +802,59 @@ def update_visuals(n_clicks, category, brand):
                 "0"   # negative-reviews-counter
             )
 
-        # Create sentiment treemap
+        # Create sentiment visualization
         sentiment_counts = filtered_data['sentiment'].value_counts()
         
+        # Define color mapping for each sentiment with modern shades
+        sentiment_colors = {
+            'Love': '#10e380',      # Material Green
+            'Great': '#26c77b',     # Light Green
+            'Positive': '#30b375',     # Light Green
+            'Fine': '#4f6159',      # Material Amber
+            'Disappointed': '#c45b1d', # Material Orange
+            'Bad': '#c4281d',        # Material Red
+            'Negative': '#fc1505'        # Material Red
+        }
+        
         # Create treemap with sentiment data
-        sentiment_treemap = go.Figure(go.Treemap(
+        sentiment_fig = go.Figure(go.Treemap(
             ids=sentiment_counts.index,
             labels=sentiment_counts.index,
             parents=[''] * len(sentiment_counts),
             values=sentiment_counts.values,
-            textinfo="label+value+percent parent",
             marker=dict(
-                colors=['#2ecc71' if filtered_data[filtered_data['sentiment'] == s]['sentiment_score'].mean() > 3 
-                       else '#f1c40f' if filtered_data[filtered_data['sentiment'] == s]['sentiment_score'].mean() == 3 
-                       else '#e74c3c' 
-                       for s in sentiment_counts.index],
+                colors=[sentiment_colors.get(s, '#808080') for s in sentiment_counts.index],
                 line=dict(width=2, color='#2d3436')
             ),
-            textfont=dict(color='white', size=14)
+            textinfo="label+value+percent parent",
+            textfont=dict(color='white', size=14),
+            hovertemplate='<b>%{label}</b><br>' +
+                         'Count: %{value}<br>' +
+                         'Percentage: %{percentParent:.1%}<br>' +
+                         '<extra></extra>'
         ))
         
-        sentiment_treemap.update_layout(
+        sentiment_fig.update_layout(
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(t=30, l=25, r=25, b=25),
+            margin=dict(t=80, l=25, r=25, b=25),
             font=dict(color='white'),
             title=dict(
                 text="Sentiment Distribution",
                 font=dict(size=20, color='white'),
                 x=0.5,
                 y=0.95
+            ),
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.15,
+                xanchor="center",
+                x=0.5,
+                font=dict(size=12, color='white'),
+                bgcolor='rgba(0,0,0,0)',
+                bordercolor='rgba(0,0,0,0)'
             )
         )
 
@@ -922,6 +942,12 @@ def update_visuals(n_clicks, category, brand):
                 stackgroup='one',
                 fill='tonexty',
                 line=dict(width=0.5),
+                text=brand_data['review_count'].apply(lambda x: f'{x:,}'),
+                textposition='top center',
+                textfont=dict(
+                    color='black',
+                    size=11
+                ),
                 hovertemplate='<b>%{x|%B %Y}</b><br>' +
                              'Brand: %{fullData.name}<br>' +
                              'Reviews: %{y}<br>' +
@@ -943,7 +969,7 @@ def update_visuals(n_clicks, category, brand):
                 gridcolor='#404040',
                 showgrid=True
             ),
-            hovermode='x unified',
+            hovermode='closest',
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
@@ -999,44 +1025,54 @@ def update_visuals(n_clicks, category, brand):
             )
         )
 
-        # Create monthly sentiment bar chart
+        # Create monthly sentiment line chart
         monthly_sentiment = filtered_data.groupby([
             pd.to_datetime(filtered_data['date']).dt.to_period('M'),
             pd.cut(filtered_data['sentiment_score'], 
-                  bins=[0, 2, 3, 5], 
-                  labels=['Negative (<3)', 'Neutral (3)', 'Positive (>3)'])
+                  bins=[0, 2.9, 3.1, 5], 
+                  labels=['Negative (<3)', 'Neutral (=3)', 'Positive (>3)'])
         ]).size().unstack(fill_value=0)
         
         monthly_sentiment.index = monthly_sentiment.index.astype(str)
         
-        monthly_reviews_chart = go.Figure()
-        
-        # Add bars for each sentiment score range
-        colors = {
-            'Positive (>3)': '#2ecc71',
-            'Neutral (3)': '#f1c40f',
-            'Negative (<3)': '#e74c3c'
+        # Define colors for sentiment categories
+        sentiment_colors = {
+            'Positive (>3)': '#10e380',  # Bright Green
+            'Neutral (=3)': '#4f6159',   # Dark Grey
+            'Negative (<3)': '#c4281d'   # Red
         }
         
+        monthly_reviews_chart = go.Figure()
+        
+        # Add lines for each sentiment category
         for sentiment in monthly_sentiment.columns:
-            monthly_reviews_chart.add_trace(go.Bar(
+            monthly_reviews_chart.add_trace(go.Scatter(
                 name=sentiment,
                 x=monthly_sentiment.index,
                 y=monthly_sentiment[sentiment],
-                marker_color=colors.get(sentiment, '#95a5a6'),
-                text=monthly_sentiment[sentiment],  # Add data labels
-                textposition='auto',  # Automatically position labels
+                mode='lines+markers+text',
+                line=dict(
+                    color=sentiment_colors.get(sentiment, '#808080'),
+                    width=3
+                ),
+                marker=dict(
+                    size=8,
+                    color=sentiment_colors.get(sentiment, '#808080'),
+                    line=dict(width=2, color='#1a1a1a')
+                ),
+                text=monthly_sentiment[sentiment].apply(lambda x: f'{x:,}'),
+                textposition='top center',
                 textfont=dict(
                     color='white',
-                    size=14
-                )
+                    size=11
+                ),
+                hoverinfo='skip'
             ))
         
         monthly_reviews_chart.update_layout(
-            title='Total Reviews',
+            title='Monthly Review Trends',
             xaxis_title='Month',
             yaxis_title='Number of Reviews',
-            barmode='group',
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
             font=dict(color='white'),
@@ -1048,6 +1084,7 @@ def update_visuals(n_clicks, category, brand):
                 gridcolor='#404040',
                 showgrid=True
             ),
+            hovermode=False,
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
@@ -1058,8 +1095,7 @@ def update_visuals(n_clicks, category, brand):
                 bgcolor='rgba(0,0,0,0)',
                 bordercolor='rgba(0,0,0,0)'
             ),
-            uniformtext_minsize=12,  # Minimum font size for labels
-            uniformtext_mode='show'  # Hide labels if they don't fit
+            margin=dict(t=40, l=25, r=25, b=50)
         )
 
         # Calculate metrics
@@ -1081,22 +1117,13 @@ def update_visuals(n_clicks, category, brand):
         else:
             health_color = '#e74c3c'  # Red
             
-        metrics = [
-            html.H4(f"Total Reviews: {total_reviews:,}", style={'color': 'white'}),
-            html.H4(f"Positive Sentiment: {positive_reviews_count / total_reviews * 100:.1f}%", style={'color': 'white'}),
-            html.H4(f"Neutral Sentiment: {neutral_reviews_count / total_reviews * 100:.1f}%", style={'color': 'white'}),
-            html.H4(f"Negative Sentiment: {negative_reviews_count / total_reviews * 100:.1f}%", style={'color': 'white'}),
-            html.H4(f"Average Rating: {filtered_data['rating'].mean():.1f}/5.0", style={'color': 'white'}),
-            html.H4(f"Average Sentiment Score: {filtered_data['sentiment_score'].mean():.1f}/5.0", style={'color': 'white'})
-        ]
-        
         return (
-            sentiment_treemap,
+            sentiment_fig,
             monthly_reviews_chart,
-            metrics,
             html.Span(f"{brand_health:.1f}%", style={'color': health_color}),  # Updated brand health score with color
             f"{competitive_position:.1f}%",
             f"{product_score:.1f}%",
+            f"{filtered_data['rating'].mean():.1f}/5.0",
             market_share_fig,
             price_fig,
             positive_wordcloud,
@@ -1115,10 +1142,10 @@ def update_visuals(n_clicks, category, brand):
         return (
             empty_fig,  # sentiment-treemap
             empty_fig,  # monthly-reviews-chart
-            [],  # metrics-container
             "0%",  # brand-health-score
             "0%",  # competitive-score
             "0%",  # product-score
+            "0.0",  # average-rating
             empty_fig,  # market-share-trend
             empty_fig,  # pricing-comparison
             None,  # positive-wordcloud
@@ -1134,21 +1161,16 @@ def update_visuals(n_clicks, category, brand):
 # Update the callback to handle all tab switching
 @app.callback(
     Output('tabs', 'active_tab'),
-    Input('positive-reviews-link', 'n_clicks'),
-    Input('neutral-reviews-link', 'n_clicks'),
-    Input('negative-reviews-link', 'n_clicks'),
-    Input('total-reviews-link', 'n_clicks'),
+    Input('open-ai-modal', 'n_clicks'),
     prevent_initial_call=True
 )
-def switch_to_product_tab(pos_clicks, neu_clicks, neg_clicks, total_clicks):
+def switch_to_product_tab(ai_clicks):
     ctx = dash.callback_context
     if not ctx.triggered:
         return dash.no_update
     
     button_id = ctx.triggered[0]['prop_id'].split('.')[0]
-    if button_id == 'total-reviews-link':
-        return 'tab-competitive'
-    elif button_id in ['positive-reviews-link', 'neutral-reviews-link', 'negative-reviews-link']:
+    if button_id == 'open-ai-modal':
         return 'tab-product'
     return dash.no_update
 
@@ -1212,7 +1234,7 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                 recommendations_content = html.Div([
                     html.H6("Quick Tips", style={'color': 'white', 'marginBottom': '15px'}),
                     html.Ul([
-                        html.Li("Monitor customer feedback trends", 
+                        html.Li("There is an increase in negative sentiment. Review the product and the customer experience.", 
                                style={'color': 'white', 'marginBottom': '10px'})
                     ])
                 ])
@@ -1226,9 +1248,9 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                     html.Div([
                         html.H6("Next Steps:", style={'color': 'white', 'marginBottom': '15px'}),
                         html.Ul([
-                            html.Li("Prepare for upcoming STAR WARS merchandise sale - coordinate with marketing team", 
+                            html.Li("Prepare for upcoming Barbie Movie merchandise sale - coordinate with marketing team", 
                                    style={'color': 'white', 'marginBottom': '10px'}),
-                            html.Li("Review inventory levels for STAR WARS collection", 
+                            html.Li("Review inventory levels for Barbie Movie collection", 
                                    style={'color': 'white', 'marginBottom': '10px'}),
                             html.Li("Update promotional materials for the sale", 
                                    style={'color': 'white', 'marginBottom': '10px'})
@@ -1237,11 +1259,11 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                 ]
                 
                 email_content = html.Div([
-                    html.H6("Email Analysis", style={'color': 'white', 'marginBottom': '15px'}),
+                    html.H6("Draft Email: Next Steps", style={'color': 'white', 'marginBottom': '15px'}),
                     html.Div([
-                        html.P("Subject: STAR WARS Merchandise Sale Planning", style={'color': 'white', 'fontWeight': 'bold', 'marginBottom': '10px'}),
+                        html.P("Subject: Barbie Movie Merchandise Sale Planning", style={'color': 'white', 'fontWeight': 'bold', 'marginBottom': '10px'}),
                         html.P("Dear Brand Manager,", style={'color': 'white', 'marginBottom': '10px'}),
-                        html.P("We need to prepare for the upcoming STAR WARS merchandise sale. Please coordinate with the marketing team to ensure all promotional materials are ready and inventory levels are sufficient. This is a key opportunity to boost sales and engage with our STAR WARS fan base.", style={'color': 'white', 'marginBottom': '10px'}),
+                        html.P("We need to prepare for the upcoming Barbie Movie merchandise sale. Please coordinate with the marketing team to ensure all promotional materials are ready and inventory levels are sufficient. This is a key opportunity to boost sales and engage with our STAR WARS fan base.", style={'color': 'white', 'marginBottom': '10px'}),
                         html.P("Best regards,", style={'color': 'white', 'marginBottom': '5px'}),
                         html.P("AI Brand Analyst", style={'color': 'white'})
                     ], className="email-analysis-content")

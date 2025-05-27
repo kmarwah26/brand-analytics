@@ -35,12 +35,12 @@ def sqlQuery(query: str) -> pd.DataFrame:
             cursor.execute(query)
             return cursor.fetchall_arrow().to_pandas()
 try:
-    data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
+    #data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
 
     # #Load data from CSV
-    # current_dir = os.path.dirname(os.path.abspath(__file__))
-    # data_path = os.path.join(current_dir, 'app_data', 'brand_insights_data.csv')
-    # data = pd.read_csv(data_path)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    data_path = os.path.join(current_dir, 'app_data', 'brand_insights_data.csv')
+    data = pd.read_csv(data_path)
     print(f"Data shape: {data.shape}")
     print(f"Data columns: {data.columns}")
     
@@ -429,7 +429,30 @@ def encode_image(image_path):
 # Layout
 app.layout = dbc.Container([
     dcc.Store(id='page-load-trigger', data=0),
-    dbc.Row([dbc.Col(html.H1("Brand Manager", className="text-center my-4 text-light"), width=12)]),
+    dbc.Row([
+        dbc.Col([
+            html.H1("Brand Manager", className="text-center my-4 text-light"),
+            html.Div([
+                html.Span("BUILT ON", style={
+                    'color': 'white',
+                    'fontSize': '14px',
+                    'marginRight': '10px',
+                    'verticalAlign': 'middle'
+                }),
+                html.Img(
+                    src=app.get_asset_url('img/small-scale-lockup-full-color-white-rgb.svg'),
+                    style={
+                        'width': '150px',
+                        'display': 'inline-block',
+                        'verticalAlign': 'middle'
+                    }
+                )
+            ], style={
+                'textAlign': 'center',
+                'marginBottom': '20px'
+            })
+        ], width=12)
+    ]),
     
     # AI Agent Modal
     dbc.Modal([
@@ -534,7 +557,7 @@ app.layout = dbc.Container([
                 dbc.Col([
                     dbc.Card([
                         dbc.CardBody([
-                            html.H3("Product Attribute Analysis", className="text-center mb-3", style={'color': 'white'}),
+                            html.H3("Product Attributes", className="text-center mb-3", style={'color': 'white'}),
                             html.H2(id='product-score', className="text-center mb-2", style={'color': '#9b59b6', 'fontSize': '2.5rem'}),
                             html.P("Product Performance Score", className="text-center text-light")
                         ])
@@ -607,7 +630,7 @@ app.layout = dbc.Container([
                     dbc.Card([
                         dbc.CardHeader("Sentiment Analysis", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
-                            dcc.Graph(id='sentiment-treemap', style={'height': '400px'})
+                            dcc.Graph(id='sentiment-treemap', style={'height': '600px'})
                         ])
                     ], style=CARD_STYLE)
                 ], width=12)
@@ -830,7 +853,7 @@ def update_visuals(n_clicks, category, brand):
             ),
             textinfo="label+value+percent parent",
             textfont=dict(color='white', size=14),
-            hovertemplate='<b>%{label}</b><br>' +
+            hovertemplate='<span style="color: #2d3436">%{label}</span><br>' +
                          'Count: %{value}<br>' +
                          'Percentage: %{percentParent:.1%}<br>' +
                          '<extra></extra>'
@@ -947,13 +970,22 @@ def update_visuals(n_clicks, category, brand):
                 text=brand_data['review_count'].apply(lambda x: f'{x:,}'),
                 textposition='top center',
                 textfont=dict(
-                    color='black',
+                    color='#2d3436',
                     size=11
                 ),
-                hovertemplate='<b>%{x|%B %Y}</b><br>' +
-                             'Brand: %{fullData.name}<br>' +
-                             'Reviews: %{y}<br>' +
-                             '<extra></extra>'
+                hovertemplate='<span style="color: #2d3436">%{x|%B %Y}</span><br>' +
+                             '<span style="color: #2d3436">Brand: %{fullData.name}</span><br>' +
+                             '<span style="color: #2d3436">Reviews: %{y:,}</span><br>' +
+                             '<extra></extra>',
+                hoverlabel=dict(
+                    bgcolor='white',
+                    font=dict(
+                        family='Arial',
+                        size=14,
+                        color='#2d3436'
+                    ),
+                    bordercolor='#636e72'
+                )
             ))
         
         market_share_fig.update_layout(
@@ -971,7 +1003,7 @@ def update_visuals(n_clicks, category, brand):
                 gridcolor='#404040',
                 showgrid=True
             ),
-            hovermode='closest',
+            hovermode='x unified',
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
@@ -1037,6 +1069,17 @@ def update_visuals(n_clicks, category, brand):
         
         monthly_sentiment.index = monthly_sentiment.index.astype(str)
         
+        # Calculate mean and standard deviation for each sentiment category
+        sentiment_stats = {}
+        for sentiment in monthly_sentiment.columns:
+            mean = monthly_sentiment[sentiment].mean()
+            std = monthly_sentiment[sentiment].std()
+            sentiment_stats[sentiment] = {
+                'mean': mean,
+                'std': std,
+                'threshold': mean + (2 * std)
+            }
+
         # Define colors for sentiment categories
         sentiment_colors = {
             'Positive (>3)': '#10e380',  # Bright Green
@@ -1048,6 +1091,22 @@ def update_visuals(n_clicks, category, brand):
         
         # Add lines for each sentiment category
         for sentiment in monthly_sentiment.columns:
+            # Create custom hover text that includes statistical flags
+            hover_text = []
+            for month, value in monthly_sentiment[sentiment].items():
+                stats = sentiment_stats[sentiment]
+                if value > stats['threshold']:
+                    hover_text.append(
+                        f"<span style='color: #2d3436'>Month: {month}<br>" +
+                        f"Count: {value}<br>" +
+                        f"⚠️ Spike Detected</span>"
+                    )
+                else:
+                    hover_text.append(
+                        f"<span style='color: #2d3436'>Month: {month}<br>" +
+                        f"Count: {value}</span>"
+                    )
+            
             monthly_reviews_chart.add_trace(go.Scatter(
                 name=sentiment,
                 x=monthly_sentiment.index,
@@ -1068,7 +1127,8 @@ def update_visuals(n_clicks, category, brand):
                     color='white',
                     size=11
                 ),
-                hoverinfo='skip'
+                hovertext=hover_text,
+                hoverinfo='text'
             ))
         
         monthly_reviews_chart.update_layout(
@@ -1086,7 +1146,7 @@ def update_visuals(n_clicks, category, brand):
                 gridcolor='#404040',
                 showgrid=True
             ),
-            hovermode=False,
+            hovermode='x unified',
             legend=dict(
                 orientation="h",
                 yanchor="bottom",

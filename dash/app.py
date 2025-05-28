@@ -1346,26 +1346,36 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
             # Call the endpoint
             try:
                 messages, request_id = query_endpoint(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128, return_traces=False)
+                print(f"Debug - Messages received: {messages}")  # Debug log
+                print(f"Debug - Request ID: {request_id}")  # Debug log
+                
                 # Get the content from the first message
                 if isinstance(messages, list) and len(messages) > 0:
-                    if isinstance(messages[0], dict) and "content" in messages[0]:
-                        content = messages[0]["content"]
+                    if isinstance(messages[0], dict):
+                        if "content" in messages[0]:
+                            content = messages[0]["content"]
+                        elif "message" in messages[0] and "content" in messages[0]["message"]:
+                            content = messages[0]["message"]["content"]
+                        else:
+                            content = str(messages[0])
                     else:
                         content = str(messages[0])
                 else:
                     content = "No analysis available"
                 
+                print(f"Debug - Content to display: {content}")  # Debug log
+                
                 analysis_content = html.Div([
                     html.P(content, style={'color': 'white'})
                 ])
             except Exception as e:
-                print(f"Error in analysis: {str(e)}")  # Add debug logging
+                print(f"Error in analysis: {str(e)}")  # Debug logging
                 analysis_content = html.Div([
                     html.H6("Error:", style={'color': 'white', 'marginBottom': '15px'}),
                     html.P(f"Failed to get analysis: {str(e)}", style={'color': 'white'})
                 ])
             
-            return analysis_content, "Analyzing trends...", None, {'display': 'none'}, 'email-analysis-container'
+            return analysis_content, "", None, {'display': 'none'}, 'email-analysis-container'
             
     except Exception as e:
         return html.P(f"Error: {str(e)}", style={'color': 'white'}), "", None, {'display': 'none'}, 'email-analysis-container'

@@ -35,12 +35,12 @@ def sqlQuery(query: str) -> pd.DataFrame:
             cursor.execute(query)
             return cursor.fetchall_arrow().to_pandas()
 try:
-    data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
+    #data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
 
     # Load data from CSV
     current_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(current_dir, 'app_data', 'brand_insights_data.csv')
-    #data = pd.read_csv(data_path)
+    data = pd.read_csv(data_path)
     print(f"Data shape: {data.shape}")
     print(f"Data columns: {data.columns}")
     
@@ -663,7 +663,7 @@ app.layout = dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Brand Review Attributes", style=CARD_HEADER_STYLE),
+                        dbc.CardHeader(id="brand-review-header", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
                             dbc.Row([
                                 dbc.Col([
@@ -711,7 +711,7 @@ app.layout = dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Category Review Attributes", style=CARD_HEADER_STYLE),
+                        dbc.CardHeader(id="category-review-header", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
                             dbc.Row([
                                 dbc.Col([
@@ -862,14 +862,14 @@ def update_visuals(n_clicks, category, brand):
         sentiment_fig.update_layout(
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(t=80, l=25, r=25, b=25),
+            margin=dict(t=25, l=25, r=25, b=25),
             font=dict(color='white'),
-            title=dict(
-                text="Sentiment Distribution",
-                font=dict(size=20, color='white'),
-                x=0.5,
-                y=0.95
-            ),
+            # title=dict(
+            #     text="Sentiment Distribution",
+            #     font=dict(size=20, color='white'),
+            #     x=0.5,
+            #     y=0.95
+            # ),
             showlegend=True,
             legend=dict(
                 orientation="h",
@@ -989,7 +989,7 @@ def update_visuals(n_clicks, category, brand):
             ))
         
         market_share_fig.update_layout(
-            title='Share of Voice',
+            #title='Share of Voice',
             xaxis_title='Month',
             yaxis_title='Number of Reviews',
             paper_bgcolor='rgba(0,0,0,0)',
@@ -1039,7 +1039,7 @@ def update_visuals(n_clicks, category, brand):
         ))
         
         price_fig.update_layout(
-            title='Brand Price Comparison',
+            #title='Brand Price Comparison',
             xaxis_title='Brand',
             yaxis_title='Average Price',
             paper_bgcolor='rgba(0,0,0,0)',
@@ -1132,7 +1132,7 @@ def update_visuals(n_clicks, category, brand):
             ))
         
         monthly_reviews_chart.update_layout(
-            title='Monthly Review Trends',
+            #title='Monthly Review Trends',
             xaxis_title='Month',
             yaxis_title='Number of Reviews',
             paper_bgcolor='rgba(0,0,0,0)',
@@ -1524,6 +1524,26 @@ def update_review_summaries(category, brand):
     except Exception as e:
         error_msg = html.P(f"Error generating summary: {str(e)}", style={'color': 'white'})
         return error_msg, error_msg, error_msg, error_msg
+
+# Add new callback for the brand review header
+@app.callback(
+    Output("brand-review-header", "children"),
+    Input('brand-filter', 'value')
+)
+def update_brand_review_header(selected_brand):
+    if selected_brand:
+        return f"What people are saying about {selected_brand} products..."
+    return "What people are saying about selected brand..."
+
+# Add callback for the category review header
+@app.callback(
+    Output("category-review-header", "children"),
+    Input('category-filter', 'value')
+)
+def update_category_review_header(selected_category):
+    if selected_category:
+        return f"What people are saying about other products in the {selected_category} category..."
+    return "What people are saying about other products in the selected category..."
 
 if __name__ == "__main__":
     # Check if running in Databricks

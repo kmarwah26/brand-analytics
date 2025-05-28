@@ -461,7 +461,7 @@ app.layout = dbc.Container([
         dbc.ModalHeader(dbc.ModalTitle("Brand AI Agent"), style={'backgroundColor': '#2d3436', 'color': 'white'}),
         dbc.ModalBody([
             html.Div([
-                html.H5("Insights", style={'color': 'white', 'marginBottom': '20px'}),
+                #html.H5("Insights", style={'color': 'white', 'marginBottom': '20px'}),
                 html.Div(id='ai-loading-message', style={'color': 'white', 'marginBottom': '20px'}),
                 html.Div(id='ai-loading-spinner', style={'marginBottom': '20px'}),
                 html.Div(id='ai-analysis-content', style={'marginTop': '20px'}),

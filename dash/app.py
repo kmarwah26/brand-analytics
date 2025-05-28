@@ -1358,56 +1358,75 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                 
                 print(f"Debug - Content to display: {content}")  # Debug log
                 
-                # Split content into paragraphs and format
-                paragraphs = content.split('\n\n')
+                # Split content into sections based on headers
+                sections = content.split('\n\n')
                 formatted_content = []
                 
-                for para in paragraphs:
-                    if ':' in para and any(num in para for num in ['1.', '2.', '3.']):
-                        # Handle sections with headers and numbered lists
-                        header, items = para.split(':', 1)
-                        items = [item.strip().lstrip('123456789.') for item in items.split('\n') if item.strip()]
-                        formatted_content.extend([
-                            html.H6(header.strip() + ':', style={'color': 'white', 'marginBottom': '10px', 'marginTop': '15px'}),
-                            html.Ul([
-                                html.Li(item, style={'color': 'white', 'marginBottom': '8px'})
-                                for item in items
-                            ])
-                        ])
-                    elif para.strip().startswith(('1.', '2.', '3.')):
-                        # Handle numbered lists
-                        items = []
-                        current_item = None
-                        for line in para.split('\n'):
-                            line = line.strip()
-                            if line.startswith(('1.', '2.', '3.')):
-                                if current_item:
-                                    items.append(current_item)
-                                current_item = {'text': line.lstrip('123456789.').strip(), 'subitems': []}
-                            elif line.startswith('-') and current_item:
-                                current_item['subitems'].append(line.lstrip('-').strip())
-                        if current_item:
-                            items.append(current_item)
+                for section in sections:
+                    if ':' in section:
+                        # Split into header and content
+                        header, content = section.split(':', 1)
+                        header = header.strip()
+                        content = content.strip()
                         
-                        formatted_content.append(html.Ol([
-                            html.Li([
-                                item['text'],
-                                html.Ul([html.Li(subitem, style={'color': 'white'}) for subitem in item['subitems']])
-                            ] if item['subitems'] else item['text'],
-                            style={'color': 'white', 'marginBottom': '8px'})
-                            for item in items
-                        ]))
-                    elif para.strip().startswith(('-', '*')):
-                        # Handle bullet points
-                        items = [item.strip().lstrip('-* ') for item in para.split('\n') if item.strip()]
-                        formatted_content.append(html.Ul([
-                            html.Li(item, style={'color': 'white', 'marginBottom': '8px'})
-                            for item in items
-                        ]))
-                    else:
-                        # Regular paragraph
+                        # Add the header
                         formatted_content.append(
-                            html.P(para, style={'color': 'white', 'marginBottom': '15px'})
+                            html.H6(header + ':', style={
+                                'color': 'white',
+                                'marginBottom': '15px',
+                                'marginTop': '20px',
+                                'fontWeight': 'bold'
+                            })
+                        )
+                        
+                        # Check if content starts with numbers or bullets
+                        if any(content.strip().startswith(str(i) + '.') for i in range(1, 10)):
+                            # Handle numbered list
+                            items = []
+                            current_item = None
+                            
+                            for line in content.split('\n'):
+                                line = line.strip()
+                                if line and line[0].isdigit() and '. ' in line:
+                                    if current_item:
+                                        items.append(current_item)
+                                    number, text = line.split('. ', 1)
+                                    current_item = {'text': text, 'subitems': []}
+                                elif line.startswith('-') and current_item:
+                                    current_item['subitems'].append(line.lstrip('-').strip())
+                                elif current_item and line:
+                                    # Append to current item's text if it's a continuation
+                                    current_item['text'] += ' ' + line
+                            
+                            if current_item:
+                                items.append(current_item)
+                            
+                            # Create ordered list with items
+                            formatted_content.append(html.Ol([
+                                html.Li([
+                                    item['text'],
+                                    html.Ul([html.Li(subitem, style={'color': 'white'}) for subitem in item['subitems']])
+                                ] if item['subitems'] else item['text'],
+                                style={'color': 'white', 'marginBottom': '12px', 'lineHeight': '1.5'})
+                                for item in items
+                            ], style={'paddingLeft': '20px'}))
+                            
+                        elif content.strip().startswith('-'):
+                            # Handle bullet points
+                            items = [item.strip().lstrip('-') for item in content.split('\n') if item.strip()]
+                            formatted_content.append(html.Ul([
+                                html.Li(item, style={'color': 'white', 'marginBottom': '12px', 'lineHeight': '1.5'})
+                                for item in items
+                            ], style={'paddingLeft': '20px'}))
+                        else:
+                            # Regular paragraph
+                            formatted_content.append(
+                                html.P(content, style={'color': 'white', 'marginBottom': '15px', 'lineHeight': '1.5'})
+                            )
+                    else:
+                        # Regular paragraph without header
+                        formatted_content.append(
+                            html.P(section, style={'color': 'white', 'marginBottom': '15px', 'lineHeight': '1.5'})
                         )
                 
                 analysis_content = html.Div(formatted_content)

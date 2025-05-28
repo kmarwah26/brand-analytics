@@ -1363,9 +1363,32 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                 formatted_content = []
                 
                 for para in paragraphs:
-                    if para.strip().startswith(('1.', '2.', '3.', '-', '*')):
-                        # Handle lists
-                        items = [item.strip().lstrip('123456789.-* ') for item in para.split('\n') if item.strip()]
+                    if para.strip().startswith(('1.', '2.', '3.')):
+                        # Handle numbered lists
+                        items = []
+                        current_item = None
+                        for line in para.split('\n'):
+                            line = line.strip()
+                            if line.startswith(('1.', '2.', '3.')):
+                                if current_item:
+                                    items.append(current_item)
+                                current_item = {'text': line.lstrip('123456789.').strip(), 'subitems': []}
+                            elif line.startswith('-') and current_item:
+                                current_item['subitems'].append(line.lstrip('-').strip())
+                        if current_item:
+                            items.append(current_item)
+                        
+                        formatted_content.append(html.Ol([
+                            html.Li([
+                                item['text'],
+                                html.Ul([html.Li(subitem, style={'color': 'white'}) for subitem in item['subitems']])
+                            ] if item['subitems'] else item['text'],
+                            style={'color': 'white', 'marginBottom': '8px'})
+                            for item in items
+                        ]))
+                    elif para.strip().startswith(('-', '*')):
+                        # Handle bullet points
+                        items = [item.strip().lstrip('-* ') for item in para.split('\n') if item.strip()]
                         formatted_content.append(html.Ul([
                             html.Li(item, style={'color': 'white', 'marginBottom': '8px'})
                             for item in items

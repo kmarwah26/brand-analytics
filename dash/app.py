@@ -1278,7 +1278,6 @@ def toggle_ai_modal(open_clicks, close_clicks, is_open):
 @app.callback(
     [Output("ai-analysis-content", "children"),
      Output("ai-loading-message", "children"),
-     Output("ai-loading-spinner", "children"),
      Output("email-analysis", "children"),
      Output("email-analysis", "style"),
      Output("email-analysis", "className")],
@@ -1291,7 +1290,7 @@ def toggle_ai_modal(open_clicks, close_clicks, is_open):
 def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
     ctx = dash.callback_context
     if not ctx.triggered:
-        return [], "", None, None, {'display': 'none'}, 'email-analysis-container'
+        return [], "", None, {'display': 'none'}, 'email-analysis-container'
     
     button_id = ctx.triggered[0]['prop_id'].split('.')[0]
     
@@ -1327,7 +1326,7 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                     ])
                 ])
             
-            return recommendations_content, "", None, None, {'display': 'none'}, 'email-analysis-container'
+            return recommendations_content, "", None, {'display': 'none'}, 'email-analysis-container'
             
         elif button_id == "analyze-button":
             # Get date range from filtered data
@@ -1360,10 +1359,10 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                     html.P(f"Failed to get analysis: {str(e)}", style={'color': 'white'})
                 ])
             
-            return analysis_content, "Analyzing trends...", None, None, {'display': 'none'}, 'email-analysis-container'
+            return analysis_content, "Analyzing trends...", None, {'display': 'none'}, 'email-analysis-container'
             
     except Exception as e:
-        return html.P(f"Error: {str(e)}", style={'color': 'white'}), "", None, None, {'display': 'none'}, 'email-analysis-container'
+        return html.P(f"Error: {str(e)}", style={'color': 'white'}), "", None, {'display': 'none'}, 'email-analysis-container'
 
 # Update the tooltip callback to show multiple top features
 @app.callback(

@@ -37,10 +37,10 @@ def sqlQuery(query: str) -> pd.DataFrame:
 try:
     data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
 
-    # #Load data from CSV
-    # current_dir = os.path.dirname(os.path.abspath(__file__))
-    # data_path = os.path.join(current_dir, 'app_data', 'brand_insights_data.csv')
-    # data = pd.read_csv(data_path)
+    # Load data from CSV
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    data_path = os.path.join(current_dir, 'app_data', 'brand_insights_data.csv')
+    #data = pd.read_csv(data_path)
     print(f"Data shape: {data.shape}")
     print(f"Data columns: {data.columns}")
     
@@ -429,7 +429,30 @@ def encode_image(image_path):
 # Layout
 app.layout = dbc.Container([
     dcc.Store(id='page-load-trigger', data=0),
-    dbc.Row([dbc.Col(html.H1("Brand Manager", className="text-center my-4 text-light"), width=12)]),
+    dbc.Row([
+        dbc.Col([
+            html.H1("Brand Manager", className="text-center my-4 text-light"),
+            html.Div([
+                html.Span("BUILT ON", style={
+                    'color': 'white',
+                    'fontSize': '14px',
+                    'marginRight': '10px',
+                    'verticalAlign': 'middle'
+                }),
+                html.Img(
+                    src=app.get_asset_url('img/small-scale-lockup-full-color-white-rgb.svg'),
+                    style={
+                        'width': '150px',
+                        'display': 'inline-block',
+                        'verticalAlign': 'middle'
+                    }
+                )
+            ], style={
+                'textAlign': 'center',
+                'marginBottom': '20px'
+            })
+        ], width=12)
+    ]),
     
     # AI Agent Modal
     dbc.Modal([
@@ -534,7 +557,7 @@ app.layout = dbc.Container([
                 dbc.Col([
                     dbc.Card([
                         dbc.CardBody([
-                            html.H3("Product Attribute Analysis", className="text-center mb-3", style={'color': 'white'}),
+                            html.H3("Product Attributes", className="text-center mb-3", style={'color': 'white'}),
                             html.H2(id='product-score', className="text-center mb-2", style={'color': '#9b59b6', 'fontSize': '2.5rem'}),
                             html.P("Product Performance Score", className="text-center text-light")
                         ])
@@ -607,7 +630,7 @@ app.layout = dbc.Container([
                     dbc.Card([
                         dbc.CardHeader("Sentiment Analysis", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
-                            dcc.Graph(id='sentiment-treemap', style={'height': '400px'})
+                            dcc.Graph(id='sentiment-treemap', style={'height': '600px'})
                         ])
                     ], style=CARD_STYLE)
                 ], width=12)
@@ -640,7 +663,7 @@ app.layout = dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Brand Review Attributes", style=CARD_HEADER_STYLE),
+                        dbc.CardHeader(id="brand-review-header", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
                             dbc.Row([
                                 dbc.Col([
@@ -688,7 +711,7 @@ app.layout = dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Category Review Attributes", style=CARD_HEADER_STYLE),
+                        dbc.CardHeader(id="category-review-header", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
                             dbc.Row([
                                 dbc.Col([
@@ -830,7 +853,7 @@ def update_visuals(n_clicks, category, brand):
             ),
             textinfo="label+value+percent parent",
             textfont=dict(color='white', size=14),
-            hovertemplate='<b>%{label}</b><br>' +
+            hovertemplate='<span style="color: #2d3436">%{label}</span><br>' +
                          'Count: %{value}<br>' +
                          'Percentage: %{percentParent:.1%}<br>' +
                          '<extra></extra>'
@@ -839,14 +862,14 @@ def update_visuals(n_clicks, category, brand):
         sentiment_fig.update_layout(
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(t=80, l=25, r=25, b=25),
+            margin=dict(t=25, l=25, r=25, b=25),
             font=dict(color='white'),
-            title=dict(
-                text="Sentiment Distribution",
-                font=dict(size=20, color='white'),
-                x=0.5,
-                y=0.95
-            ),
+            # title=dict(
+            #     text="Sentiment Distribution",
+            #     font=dict(size=20, color='white'),
+            #     x=0.5,
+            #     y=0.95
+            # ),
             showlegend=True,
             legend=dict(
                 orientation="h",
@@ -947,17 +970,26 @@ def update_visuals(n_clicks, category, brand):
                 text=brand_data['review_count'].apply(lambda x: f'{x:,}'),
                 textposition='top center',
                 textfont=dict(
-                    color='black',
+                    color='#2d3436',
                     size=11
                 ),
-                hovertemplate='<b>%{x|%B %Y}</b><br>' +
-                             'Brand: %{fullData.name}<br>' +
-                             'Reviews: %{y}<br>' +
-                             '<extra></extra>'
+                hovertemplate='<span style="color: #2d3436">%{x|%B %Y}</span><br>' +
+                             '<span style="color: #2d3436">Brand: %{fullData.name}</span><br>' +
+                             '<span style="color: #2d3436">Reviews: %{y:,}</span><br>' +
+                             '<extra></extra>',
+                hoverlabel=dict(
+                    bgcolor='white',
+                    font=dict(
+                        family='Arial',
+                        size=14,
+                        color='#2d3436'
+                    ),
+                    bordercolor='#636e72'
+                )
             ))
         
         market_share_fig.update_layout(
-            title='Share of Voice',
+            #title='Share of Voice',
             xaxis_title='Month',
             yaxis_title='Number of Reviews',
             paper_bgcolor='rgba(0,0,0,0)',
@@ -971,7 +1003,7 @@ def update_visuals(n_clicks, category, brand):
                 gridcolor='#404040',
                 showgrid=True
             ),
-            hovermode='closest',
+            hovermode='x unified',
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
@@ -1007,7 +1039,7 @@ def update_visuals(n_clicks, category, brand):
         ))
         
         price_fig.update_layout(
-            title='Brand Price Comparison',
+            #title='Brand Price Comparison',
             xaxis_title='Brand',
             yaxis_title='Average Price',
             paper_bgcolor='rgba(0,0,0,0)',
@@ -1037,6 +1069,17 @@ def update_visuals(n_clicks, category, brand):
         
         monthly_sentiment.index = monthly_sentiment.index.astype(str)
         
+        # Calculate mean and standard deviation for each sentiment category
+        sentiment_stats = {}
+        for sentiment in monthly_sentiment.columns:
+            mean = monthly_sentiment[sentiment].mean()
+            std = monthly_sentiment[sentiment].std()
+            sentiment_stats[sentiment] = {
+                'mean': mean,
+                'std': std,
+                'threshold': mean + (1.5 * std)
+            }
+
         # Define colors for sentiment categories
         sentiment_colors = {
             'Positive (>3)': '#10e380',  # Bright Green
@@ -1048,6 +1091,22 @@ def update_visuals(n_clicks, category, brand):
         
         # Add lines for each sentiment category
         for sentiment in monthly_sentiment.columns:
+            # Create custom hover text that includes statistical flags
+            hover_text = []
+            for month, value in monthly_sentiment[sentiment].items():
+                stats = sentiment_stats[sentiment]
+                if value > stats['threshold']:
+                    hover_text.append(
+                        f"<span style='color: #2d3436'>Month: {month}<br>" +
+                        f"Count: {value}<br>" +
+                        f"⚠️ Spike Detected</span>"
+                    )
+                else:
+                    hover_text.append(
+                        f"<span style='color: #2d3436'>Month: {month}<br>" +
+                        f"Count: {value}</span>"
+                    )
+            
             monthly_reviews_chart.add_trace(go.Scatter(
                 name=sentiment,
                 x=monthly_sentiment.index,
@@ -1068,11 +1127,12 @@ def update_visuals(n_clicks, category, brand):
                     color='white',
                     size=11
                 ),
-                hoverinfo='skip'
+                hovertext=hover_text,
+                hoverinfo='text'
             ))
         
         monthly_reviews_chart.update_layout(
-            title='Monthly Review Trends',
+            #title='Monthly Review Trends',
             xaxis_title='Month',
             yaxis_title='Number of Reviews',
             paper_bgcolor='rgba(0,0,0,0)',
@@ -1086,7 +1146,7 @@ def update_visuals(n_clicks, category, brand):
                 gridcolor='#404040',
                 showgrid=True
             ),
-            hovermode=False,
+            hovermode='x unified',
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
@@ -1464,6 +1524,26 @@ def update_review_summaries(category, brand):
     except Exception as e:
         error_msg = html.P(f"Error generating summary: {str(e)}", style={'color': 'white'})
         return error_msg, error_msg, error_msg, error_msg
+
+# Add new callback for the brand review header
+@app.callback(
+    Output("brand-review-header", "children"),
+    Input('brand-filter', 'value')
+)
+def update_brand_review_header(selected_brand):
+    if selected_brand:
+        return f"What people are saying about {selected_brand} products..."
+    return "What people are saying about selected brand..."
+
+# Add callback for the category review header
+@app.callback(
+    Output("category-review-header", "children"),
+    Input('category-filter', 'value')
+)
+def update_category_review_header(selected_category):
+    if selected_category:
+        return f"What people are saying about other products in the {selected_category} category..."
+    return "What people are saying about other products in the selected category..."
 
 if __name__ == "__main__":
     # Check if running in Databricks

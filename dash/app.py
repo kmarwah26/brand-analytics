@@ -14,7 +14,7 @@ import io
 from databricks import sql
 from databricks.sdk.core import Config
 import time
-from model_serving_utils import query_endpoint
+from model_serving_utils import query_endpoint, query_endpoint_stream
 
 # print(".....")
 # print(os.getcwd())
@@ -1322,10 +1322,26 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
             
             # Call the endpoint
             try:
-                response = query_endpoint(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128)
+                # Try streaming first
+                try:
+                    # Initialize empty content
+                    full_content = ""
+                    # Get streaming response
+                    for chunk in query_endpoint_stream(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128, return_traces=False):
+                        if "delta" in chunk and "content" in chunk["delta"]:
+                            full_content += chunk["delta"]["content"]
+                    
+                    if not full_content:  # If streaming didn't yield any content
+                        raise Exception("No content received from streaming")
+                        
+                except Exception as stream_error:
+                    # Fall back to non-streaming endpoint
+                    response = query_endpoint(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128)
+                    full_content = response["content"]
+                
                 analysis_content = html.Div([
                     html.H6("Analysis Results:", style={'color': 'white', 'marginBottom': '15px'}),
-                    html.P(response["content"], style={'color': 'white'})
+                    html.P(full_content, style={'color': 'white'})
                 ])
             except Exception as e:
                 analysis_content = html.Div([

@@ -1363,7 +1363,18 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                 formatted_content = []
                 
                 for para in paragraphs:
-                    if para.strip().startswith(('1.', '2.', '3.')):
+                    if ':' in para and any(num in para for num in ['1.', '2.', '3.']):
+                        # Handle sections with headers and numbered lists
+                        header, items = para.split(':', 1)
+                        items = [item.strip().lstrip('123456789.') for item in items.split('\n') if item.strip()]
+                        formatted_content.extend([
+                            html.H6(header.strip() + ':', style={'color': 'white', 'marginBottom': '10px', 'marginTop': '15px'}),
+                            html.Ul([
+                                html.Li(item, style={'color': 'white', 'marginBottom': '8px'})
+                                for item in items
+                            ])
+                        ])
+                    elif para.strip().startswith(('1.', '2.', '3.')):
                         # Handle numbered lists
                         items = []
                         current_item = None

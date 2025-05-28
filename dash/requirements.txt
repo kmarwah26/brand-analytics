@@ -10,3 +10,4 @@ databricks-sdk[databricks-sql]
 databricks-sdk
 pyyaml
 wordcloud
+mlflow>=2.21.2

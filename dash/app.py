@@ -14,6 +14,7 @@ import io
 from databricks import sql
 from databricks.sdk.core import Config
 import time
+from model_serving_utils import query_endpoint
 
 # print(".....")
 # print(os.getcwd())
@@ -1305,90 +1306,43 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
             return recommendations_content, "", None, None, {'display': 'none'}, 'email-analysis-container'
             
         elif button_id == "analyze-button":
-            # Brand-specific next steps
-            if brand == "Barbie":
-                analysis_content = [
-                    html.Div([
-                        html.H6("Next Steps:", style={'color': 'white', 'marginBottom': '15px'}),
-                        html.Ul([
-                            html.Li("Prepare for upcoming Barbie Movie merchandise sale - coordinate with marketing team", 
-                                   style={'color': 'white', 'marginBottom': '10px'}),
-                            html.Li("Review inventory levels for Barbie Movie collection", 
-                                   style={'color': 'white', 'marginBottom': '10px'}),
-                            html.Li("Update promotional materials for the sale", 
-                                   style={'color': 'white', 'marginBottom': '10px'})
-                        ])
-                    ])
+            # Get date range from filtered data
+            end_date = filtered_data['date'].max().strftime('%Y-%m-%d')
+            start_date = (filtered_data['date'].max() - pd.DateOffset(months=3)).strftime('%Y-%m-%d')
+            
+            # Construct the message for the endpoint
+            # message = {
+            #     "messages": [
+            #         {
+            #             "role": "user",
+            #             "content": f"For product {brand} Category: {category} has the sentiment gone up or down between date:{start_date} and date:{end_date}?"
+            #         }
+            #     ]
+            # }
+
+            message = {
+                "messages": [
+                    {
+                    "role": "user",
+                    "content": "For product Spigen Tough Armor [Extreme Protection Tech] Designed for Google Pixel 3 Case (2018) - Black Brand: Spigen Category: Cell Phones & Accessories has the sentiment gone up or down between date:2022-04-03 and date:2022-06-13 ? "
+                    }
                 ]
-                
-                email_content = html.Div([
-                    html.H6("Draft Email: Next Steps", style={'color': 'white', 'marginBottom': '15px'}),
-                    html.Div([
-                        html.P("Subject: Barbie Movie Merchandise Sale Planning", style={'color': 'white', 'fontWeight': 'bold', 'marginBottom': '10px'}),
-                        html.P("Dear Brand Manager,", style={'color': 'white', 'marginBottom': '10px'}),
-                        html.P("We need to prepare for the upcoming Barbie Movie merchandise sale. Please coordinate with the marketing team to ensure all promotional materials are ready and inventory levels are sufficient. This is a key opportunity to boost sales and engage with our Barbie fan base.", style={'color': 'white', 'marginBottom': '10px'}),
-                        html.P("Best regards,", style={'color': 'white', 'marginBottom': '5px'}),
-                        html.P("AI Brand Analyst", style={'color': 'white'})
-                    ], className="email-analysis-content")
+                }
+            
+            # Call the endpoint
+            try:
+                response = query_endpoint(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128)
+                analysis_content = html.Div([
+                    html.H6("Analysis Results:", style={'color': 'white', 'marginBottom': '15px'}),
+                    html.P(response["content"], style={'color': 'white'})
                 ])
-                
-            elif brand == "LEGO":
-                analysis_content = [
-                    html.Div([
-                        html.H6("Next Steps:", style={'color': 'white', 'marginBottom': '15px'}),
-                        html.Ul([
-                            html.Li("Send urgent communication to all packing and distribution centers", 
-                                   style={'color': 'white', 'marginBottom': '10px'}),
-                            html.Li("Review current packaging standards", 
-                                   style={'color': 'white', 'marginBottom': '10px'}),
-                            html.Li("Implement additional quality checks", 
-                                   style={'color': 'white', 'marginBottom': '10px'})
-                        ])
-                    ])
-                ]
-                
-                email_content = html.Div([
-                    html.H6("Email Analysis", style={'color': 'white', 'marginBottom': '15px'}),
-                    html.Div([
-                        html.P("Subject: Urgent: Packaging Quality Concerns", style={'color': 'white', 'fontWeight': 'bold', 'marginBottom': '10px'}),
-                        html.P("Dear Brand Manager,", style={'color': 'white', 'marginBottom': '10px'}),
-                        html.P("Recent customer feedback indicates an increase in damaged boxes and packaging issues. Please send an immediate communication to all packing and distribution centers to address these concerns. We need to review our current packaging standards and implement additional quality checks to maintain our brand's reputation for quality.", style={'color': 'white', 'marginBottom': '10px'}),
-                        html.P("Best regards,", style={'color': 'white', 'marginBottom': '5px'}),
-                        html.P("AI Brand Analyst", style={'color': 'white'})
-                    ], className="email-analysis-content")
-                ])
-                
-            else:
-                # Default content for other brands
-                analysis_content = [
-                    html.Div([
-                        html.H6("Next Steps:", style={'color': 'white', 'marginBottom': '15px'}),
-                        html.Ul([
-                            html.Li("Monitor customer feedback trends", style={'color': 'white', 'marginBottom': '10px'}),
-                            html.Li("Review current marketing strategies", style={'color': 'white', 'marginBottom': '10px'}),
-                            html.Li("Analyze competitor activities", style={'color': 'white', 'marginBottom': '10px'})
-                        ])
-                    ])
-                ]
-                
-                email_content = html.Div([
-                    html.H6("Email Analysis", style={'color': 'white', 'marginBottom': '15px'}),
-                    html.Div([
-                        html.P("Subject: General Brand Update", style={'color': 'white', 'fontWeight': 'bold', 'marginBottom': '10px'}),
-                        html.P("Dear Brand Manager,", style={'color': 'white', 'marginBottom': '10px'}),
-                        html.P("Please review the current brand performance metrics and consider implementing the suggested next steps to improve customer satisfaction and market position.", style={'color': 'white', 'marginBottom': '10px'}),
-                        html.P("Best regards,", style={'color': 'white', 'marginBottom': '5px'}),
-                        html.P("AI Brand Analyst", style={'color': 'white'})
-                    ], className="email-analysis-content")
+            except Exception as e:
+                analysis_content = html.Div([
+                    html.H6("Error:", style={'color': 'white', 'marginBottom': '15px'}),
+                    html.P(f"Failed to get analysis: {str(e)}", style={'color': 'white'})
                 ])
             
-            return analysis_content, "", None, email_content, {
-                'marginTop': '20px',
-                'padding': '20px',
-                'backgroundColor': '#636e72',
-                'borderRadius': '5px',
-                'display': 'block'
-            }, 'email-analysis-container show'
+            return analysis_content, "", None, None, {'display': 'none'}, 'email-analysis-container'
             
     except Exception as e:
         return html.P(f"Error: {str(e)}", style={'color': 'white'}), "", None, None, {'display': 'none'}, 'email-analysis-container'

@@ -1358,9 +1358,25 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                 
                 print(f"Debug - Content to display: {content}")  # Debug log
                 
-                analysis_content = html.Div([
-                    html.P(content, style={'color': 'white'})
-                ])
+                # Split content into paragraphs and format
+                paragraphs = content.split('\n\n')
+                formatted_content = []
+                
+                for para in paragraphs:
+                    if para.strip().startswith(('1.', '2.', '3.', '-', '*')):
+                        # Handle lists
+                        items = [item.strip().lstrip('123456789.-* ') for item in para.split('\n') if item.strip()]
+                        formatted_content.append(html.Ul([
+                            html.Li(item, style={'color': 'white', 'marginBottom': '8px'})
+                            for item in items
+                        ]))
+                    else:
+                        # Regular paragraph
+                        formatted_content.append(
+                            html.P(para, style={'color': 'white', 'marginBottom': '15px'})
+                        )
+                
+                analysis_content = html.Div(formatted_content)
             except Exception as e:
                 print(f"Error in analysis: {str(e)}")  # Debug logging
                 analysis_content = html.Div([

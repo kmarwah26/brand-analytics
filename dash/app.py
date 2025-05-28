@@ -1345,7 +1345,7 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                         html.Div(id="loading-output"),
                         color="primary",
                         type="grow",
-                        style=SPINNER_STYLE
+                        spinner_style=SPINNER_STYLE
                     ),
                     html.P("Analyzing trends...", style={'color': 'white', 'marginTop': '15px', 'textAlign': 'center'})
                 ], style=LOADING_STYLE)

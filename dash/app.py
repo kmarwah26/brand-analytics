@@ -1353,7 +1353,7 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
             
             # Call the endpoint
             try:
-                response = query_endpoint(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128)
+                response = query_endpoint(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128, return_traces=False)
                 analysis_content = html.Div([
                     html.H6("Analysis Results:", style={'color': 'white', 'marginBottom': '15px'}),
                     html.P(response["content"], style={'color': 'white'})

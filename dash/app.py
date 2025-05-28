@@ -1347,13 +1347,19 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
             try:
                 messages, request_id = query_endpoint(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128, return_traces=False)
                 # Get the content from the first message
-                content = messages[0]["content"] if messages else "No analysis available"
+                if isinstance(messages, list) and len(messages) > 0:
+                    if isinstance(messages[0], dict) and "content" in messages[0]:
+                        content = messages[0]["content"]
+                    else:
+                        content = str(messages[0])
+                else:
+                    content = "No analysis available"
                 
                 analysis_content = html.Div([
-                    html.H6("Analysis Results:", style={'color': 'white', 'marginBottom': '15px'}),
                     html.P(content, style={'color': 'white'})
                 ])
             except Exception as e:
+                print(f"Error in analysis: {str(e)}")  # Add debug logging
                 analysis_content = html.Div([
                     html.H6("Error:", style={'color': 'white', 'marginBottom': '15px'}),
                     html.P(f"Failed to get analysis: {str(e)}", style={'color': 'white'})

@@ -1349,19 +1349,12 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                 print(f"Debug - Messages received: {messages}")  # Debug log
                 print(f"Debug - Request ID: {request_id}")  # Debug log
                 
-                # Get the content from the first message
-                if isinstance(messages, list) and len(messages) > 0:
-                    if isinstance(messages[0], dict):
-                        if "content" in messages[0]:
-                            content = messages[0]["content"]
-                        elif "message" in messages[0] and "content" in messages[0]["message"]:
-                            content = messages[0]["message"]["content"]
-                        else:
-                            content = str(messages[0])
-                    else:
-                        content = str(messages[0])
-                else:
-                    content = "No analysis available"
+                # Get the content from the final assistant message
+                content = "No analysis available"
+                for msg in reversed(messages):
+                    if msg.get('role') == 'assistant' and msg.get('content'):
+                        content = msg['content']
+                        break
                 
                 print(f"Debug - Content to display: {content}")  # Debug log
                 

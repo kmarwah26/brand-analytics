@@ -14,7 +14,7 @@ import io
 from databricks import sql
 from databricks.sdk.core import Config
 import time
-from model_serving_utils import query_endpoint, query_endpoint_stream
+from model_serving_utils import query_endpoint
 
 # print(".....")
 # print(os.getcwd())
@@ -291,6 +291,24 @@ COUNTER_BOX_STYLE = {
     'textAlign': 'center',
     'marginBottom': '20px',
     'boxShadow': '0 4px 6px rgba(0, 0, 0, 0.2)'
+}
+
+# Add loading component styles
+LOADING_STYLE = {
+    'display': 'flex',
+    'flexDirection': 'column',
+    'alignItems': 'center',
+    'justifyContent': 'center',
+    'padding': '20px',
+    'backgroundColor': '#2d3436',
+    'borderRadius': '5px',
+    'marginTop': '20px'
+}
+
+SPINNER_STYLE = {
+    'width': '3rem',
+    'height': '3rem',
+    'color': '#3498db'
 }
 
 # Add custom CSS for animationsee
@@ -1320,28 +1338,25 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                 ]
             }
             
+            # Show loading state
+            loading_content = html.Div([
+                html.Div([
+                    dbc.Spinner(
+                        html.Div(id="loading-output"),
+                        color="primary",
+                        type="grow",
+                        style=SPINNER_STYLE
+                    ),
+                    html.P("Analyzing trends...", style={'color': 'white', 'marginTop': '15px', 'textAlign': 'center'})
+                ], style=LOADING_STYLE)
+            ])
+            
             # Call the endpoint
             try:
-                # Try streaming first
-                try:
-                    # Initialize empty content
-                    full_content = ""
-                    # Get streaming response
-                    for chunk in query_endpoint_stream(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128, return_traces=False):
-                        if "delta" in chunk and "content" in chunk["delta"]:
-                            full_content += chunk["delta"]["content"]
-                    
-                    if not full_content:  # If streaming didn't yield any content
-                        raise Exception("No content received from streaming")
-                        
-                except Exception as stream_error:
-                    # Fall back to non-streaming endpoint
-                    response = query_endpoint(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128)
-                    full_content = response["content"]
-                
+                response = query_endpoint(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128)
                 analysis_content = html.Div([
                     html.H6("Analysis Results:", style={'color': 'white', 'marginBottom': '15px'}),
-                    html.P(full_content, style={'color': 'white'})
+                    html.P(response["content"], style={'color': 'white'})
                 ])
             except Exception as e:
                 analysis_content = html.Div([
@@ -1349,7 +1364,7 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                     html.P(f"Failed to get analysis: {str(e)}", style={'color': 'white'})
                 ])
             
-            return analysis_content, "", None, None, {'display': 'none'}, 'email-analysis-container'
+            return analysis_content, "Analyzing trends...", loading_content, None, {'display': 'none'}, 'email-analysis-container'
             
     except Exception as e:
         return html.P(f"Error: {str(e)}", style={'color': 'white'}), "", None, None, {'display': 'none'}, 'email-analysis-container'

@@ -19,7 +19,8 @@ import time
 # print(os.getcwd())
 
 # Ensure environment variable is set correctly
-assert os.getenv('DATABRICKS_WAREHOUSE_ID') 
+assert os.getenv('DATABRICKS_WAREHOUSE_ID')
+assert os.getenv('SERVING_ENDPOINT')
 
 
 # Load data from SQL

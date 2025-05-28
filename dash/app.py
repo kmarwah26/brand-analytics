@@ -475,7 +475,7 @@ app.layout = dbc.Container([
                             style={'backgroundColor': '#2ecc71', 'borderColor': '#2ecc71'}
                         ),
                         dbc.Button(
-                            "Next Steps",
+                            "Analyze Trends",
                             id="analyze-button",
                             color="primary",
                             className="mt-3",
@@ -648,7 +648,7 @@ app.layout = dbc.Container([
                             html.Div([
                                 html.Span("Monthly Review Trends", style={'flex': '1'}),
                                 dbc.Button(
-                                    "AI Agent",
+                                    "Analyze with AI Agent",
                                     id="open-ai-modal",
                                     color="primary",
                                     className="ms-auto",
@@ -1311,23 +1311,14 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
             start_date = (filtered_data['date'].max() - pd.DateOffset(months=3)).strftime('%Y-%m-%d')
             
             # Construct the message for the endpoint
-            # message = {
-            #     "messages": [
-            #         {
-            #             "role": "user",
-            #             "content": f"For product {brand} Category: {category} has the sentiment gone up or down between date:{start_date} and date:{end_date}?"
-            #         }
-            #     ]
-            # }
-
             message = {
                 "messages": [
                     {
-                    "role": "user",
-                    "content": "For product Spigen Tough Armor [Extreme Protection Tech] Designed for Google Pixel 3 Case (2018) - Black Brand: Spigen Category: Cell Phones & Accessories has the sentiment gone up or down between date:2022-04-03 and date:2022-06-13 ? "
+                        "role": "user",
+                        "content": f"For Brand: {brand} Category: {category} has the sentiment gone up or down between date:{start_date} and date:{end_date}? What products are driving this change? "
                     }
                 ]
-                }
+            }
             
             # Call the endpoint
             try:

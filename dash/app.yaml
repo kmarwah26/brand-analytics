@@ -4,6 +4,6 @@ command: [
 ]
 env:
   - name: "DATABRICKS_WAREHOUSE_ID"
-    value: "sql_warehouse"
+    value: "148ccb90800933a1"
   - name: "SERVING_ENDPOINT"
-    value: "serving_endpoint"
+    value: "agents_retail_cpg_demo-brand_manager-cpg_sentiment_agent"

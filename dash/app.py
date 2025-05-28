@@ -479,10 +479,16 @@ app.layout = dbc.Container([
         dbc.ModalHeader(dbc.ModalTitle("Brand AI Agent"), style={'backgroundColor': '#2d3436', 'color': 'white'}),
         dbc.ModalBody([
             html.Div([
-                #html.H5("Insights", style={'color': 'white', 'marginBottom': '20px'}),
                 html.Div(id='ai-loading-message', style={'color': 'white', 'marginBottom': '20px'}),
-                html.Div(id='ai-loading-spinner', style={'marginBottom': '20px'}),
-                html.Div(id='ai-analysis-content', style={'marginTop': '20px'}),
+                dcc.Loading(
+                    id="loading-analysis",
+                    type="circle",
+                    children=[
+                        html.Div(id='ai-analysis-content', style={'marginTop': '20px'})
+                    ],
+                    style={'backgroundColor': '#2d3436'},
+                    color='#3498db'
+                ),
                 dbc.Row([
                     dbc.Col([
                         dbc.Button(
@@ -1338,25 +1344,15 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                 ]
             }
             
-            # Show loading state
-            loading_content = html.Div([
-                html.Div([
-                    dbc.Spinner(
-                        html.Div(id="loading-output"),
-                        color="primary",
-                        type="grow",
-                        spinner_style=SPINNER_STYLE
-                    ),
-                    html.P("Analyzing trends...", style={'color': 'white', 'marginTop': '15px', 'textAlign': 'center'})
-                ], style=LOADING_STYLE)
-            ])
-            
             # Call the endpoint
             try:
-                response = query_endpoint(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128, return_traces=False)
+                messages, request_id = query_endpoint(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128, return_traces=False)
+                # Get the content from the first message
+                content = messages[0]["content"] if messages else "No analysis available"
+                
                 analysis_content = html.Div([
                     html.H6("Analysis Results:", style={'color': 'white', 'marginBottom': '15px'}),
-                    html.P(response["content"], style={'color': 'white'})
+                    html.P(content, style={'color': 'white'})
                 ])
             except Exception as e:
                 analysis_content = html.Div([
@@ -1364,7 +1360,7 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                     html.P(f"Failed to get analysis: {str(e)}", style={'color': 'white'})
                 ])
             
-            return analysis_content, "Analyzing trends...", loading_content, None, {'display': 'none'}, 'email-analysis-container'
+            return analysis_content, "Analyzing trends...", None, None, {'display': 'none'}, 'email-analysis-container'
             
     except Exception as e:
         return html.P(f"Error: {str(e)}", style={'color': 'white'}), "", None, None, {'display': 'none'}, 'email-analysis-container'

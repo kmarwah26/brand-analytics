@@ -14,12 +14,14 @@ import io
 from databricks import sql
 from databricks.sdk.core import Config
 import time
+from model_serving_utils import query_endpoint
 
 # print(".....")
 # print(os.getcwd())
 
 # Ensure environment variable is set correctly
-assert os.getenv('DATABRICKS_WAREHOUSE_ID') 
+assert os.getenv('DATABRICKS_WAREHOUSE_ID')
+assert os.getenv('SERVING_ENDPOINT')
 
 
 # Load data from SQL
@@ -291,6 +293,24 @@ COUNTER_BOX_STYLE = {
     'boxShadow': '0 4px 6px rgba(0, 0, 0, 0.2)'
 }
 
+# Add loading component styles
+LOADING_STYLE = {
+    'display': 'flex',
+    'flexDirection': 'column',
+    'alignItems': 'center',
+    'justifyContent': 'center',
+    'padding': '20px',
+    'backgroundColor': '#2d3436',
+    'borderRadius': '5px',
+    'marginTop': '20px'
+}
+
+SPINNER_STYLE = {
+    'width': '3rem',
+    'height': '3rem',
+    'color': '#3498db'
+}
+
 # Add custom CSS for animationsee
 app.index_string = '''
 <!DOCTYPE html>
@@ -459,10 +479,16 @@ app.layout = dbc.Container([
         dbc.ModalHeader(dbc.ModalTitle("Brand AI Agent"), style={'backgroundColor': '#2d3436', 'color': 'white'}),
         dbc.ModalBody([
             html.Div([
-                html.H5("Insights", style={'color': 'white', 'marginBottom': '20px'}),
                 html.Div(id='ai-loading-message', style={'color': 'white', 'marginBottom': '20px'}),
-                html.Div(id='ai-loading-spinner', style={'marginBottom': '20px'}),
-                html.Div(id='ai-analysis-content', style={'marginTop': '20px'}),
+                dcc.Loading(
+                    id="loading-analysis",
+                    type="circle",
+                    children=[
+                        html.Div(id='ai-analysis-content', style={'marginTop': '20px'})
+                    ],
+                    style={'backgroundColor': '#2d3436'},
+                    color='#3498db'
+                ),
                 dbc.Row([
                     dbc.Col([
                         dbc.Button(
@@ -473,7 +499,7 @@ app.layout = dbc.Container([
                             style={'backgroundColor': '#2ecc71', 'borderColor': '#2ecc71'}
                         ),
                         dbc.Button(
-                            "Next Steps",
+                            "Analyze Trends",
                             id="analyze-button",
                             color="primary",
                             className="mt-3",
@@ -646,7 +672,7 @@ app.layout = dbc.Container([
                             html.Div([
                                 html.Span("Monthly Review Trends", style={'flex': '1'}),
                                 dbc.Button(
-                                    "AI Agent",
+                                    "Analyze with AI Agent",
                                     id="open-ai-modal",
                                     color="primary",
                                     className="ms-auto",
@@ -1252,7 +1278,6 @@ def toggle_ai_modal(open_clicks, close_clicks, is_open):
 @app.callback(
     [Output("ai-analysis-content", "children"),
      Output("ai-loading-message", "children"),
-     Output("ai-loading-spinner", "children"),
      Output("email-analysis", "children"),
      Output("email-analysis", "style"),
      Output("email-analysis", "className")],
@@ -1265,7 +1290,7 @@ def toggle_ai_modal(open_clicks, close_clicks, is_open):
 def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
     ctx = dash.callback_context
     if not ctx.triggered:
-        return [], "", None, None, {'display': 'none'}, 'email-analysis-container'
+        return [], "", None, {'display': 'none'}, 'email-analysis-container'
     
     button_id = ctx.triggered[0]['prop_id'].split('.')[0]
     
@@ -1301,96 +1326,121 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
                     ])
                 ])
             
-            return recommendations_content, "", None, None, {'display': 'none'}, 'email-analysis-container'
+            return recommendations_content, "", None, {'display': 'none'}, 'email-analysis-container'
             
         elif button_id == "analyze-button":
-            # Brand-specific next steps
-            if brand == "Barbie":
-                analysis_content = [
-                    html.Div([
-                        html.H6("Next Steps:", style={'color': 'white', 'marginBottom': '15px'}),
-                        html.Ul([
-                            html.Li("Prepare for upcoming Barbie Movie merchandise sale - coordinate with marketing team", 
-                                   style={'color': 'white', 'marginBottom': '10px'}),
-                            html.Li("Review inventory levels for Barbie Movie collection", 
-                                   style={'color': 'white', 'marginBottom': '10px'}),
-                            html.Li("Update promotional materials for the sale", 
-                                   style={'color': 'white', 'marginBottom': '10px'})
-                        ])
-                    ])
+            # Get date range from filtered data
+            end_date = filtered_data['date'].max().strftime('%Y-%m-%d')
+            start_date = (filtered_data['date'].max() - pd.DateOffset(months=3)).strftime('%Y-%m-%d')
+            
+            # Construct the message for the endpoint
+            message = {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"For Brand: {brand} Category: {category} has the sentiment gone up or down between date:{start_date} and date:{end_date}? What products are driving this change? "
+                    }
                 ]
+            }
+            
+            # Call the endpoint
+            try:
+                messages, request_id = query_endpoint(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128, return_traces=False)
+                print(f"Debug - Messages received: {messages}")  # Debug log
+                print(f"Debug - Request ID: {request_id}")  # Debug log
                 
-                email_content = html.Div([
-                    html.H6("Draft Email: Next Steps", style={'color': 'white', 'marginBottom': '15px'}),
-                    html.Div([
-                        html.P("Subject: Barbie Movie Merchandise Sale Planning", style={'color': 'white', 'fontWeight': 'bold', 'marginBottom': '10px'}),
-                        html.P("Dear Brand Manager,", style={'color': 'white', 'marginBottom': '10px'}),
-                        html.P("We need to prepare for the upcoming Barbie Movie merchandise sale. Please coordinate with the marketing team to ensure all promotional materials are ready and inventory levels are sufficient. This is a key opportunity to boost sales and engage with our Barbie fan base.", style={'color': 'white', 'marginBottom': '10px'}),
-                        html.P("Best regards,", style={'color': 'white', 'marginBottom': '5px'}),
-                        html.P("AI Brand Analyst", style={'color': 'white'})
-                    ], className="email-analysis-content")
-                ])
+                # Get the content from the final assistant message
+                content = "No analysis available"
+                for msg in reversed(messages):
+                    if msg.get('role') == 'assistant' and msg.get('content'):
+                        content = msg['content']
+                        break
                 
-            elif brand == "LEGO":
-                analysis_content = [
-                    html.Div([
-                        html.H6("Next Steps:", style={'color': 'white', 'marginBottom': '15px'}),
-                        html.Ul([
-                            html.Li("Send urgent communication to all packing and distribution centers", 
-                                   style={'color': 'white', 'marginBottom': '10px'}),
-                            html.Li("Review current packaging standards", 
-                                   style={'color': 'white', 'marginBottom': '10px'}),
-                            html.Li("Implement additional quality checks", 
-                                   style={'color': 'white', 'marginBottom': '10px'})
-                        ])
-                    ])
-                ]
+                print(f"Debug - Content to display: {content}")  # Debug log
                 
-                email_content = html.Div([
-                    html.H6("Email Analysis", style={'color': 'white', 'marginBottom': '15px'}),
-                    html.Div([
-                        html.P("Subject: Urgent: Packaging Quality Concerns", style={'color': 'white', 'fontWeight': 'bold', 'marginBottom': '10px'}),
-                        html.P("Dear Brand Manager,", style={'color': 'white', 'marginBottom': '10px'}),
-                        html.P("Recent customer feedback indicates an increase in damaged boxes and packaging issues. Please send an immediate communication to all packing and distribution centers to address these concerns. We need to review our current packaging standards and implement additional quality checks to maintain our brand's reputation for quality.", style={'color': 'white', 'marginBottom': '10px'}),
-                        html.P("Best regards,", style={'color': 'white', 'marginBottom': '5px'}),
-                        html.P("AI Brand Analyst", style={'color': 'white'})
-                    ], className="email-analysis-content")
-                ])
+                # Split content into sections based on headers
+                sections = content.split('\n\n')
+                formatted_content = []
                 
-            else:
-                # Default content for other brands
-                analysis_content = [
-                    html.Div([
-                        html.H6("Next Steps:", style={'color': 'white', 'marginBottom': '15px'}),
-                        html.Ul([
-                            html.Li("Monitor customer feedback trends", style={'color': 'white', 'marginBottom': '10px'}),
-                            html.Li("Review current marketing strategies", style={'color': 'white', 'marginBottom': '10px'}),
-                            html.Li("Analyze competitor activities", style={'color': 'white', 'marginBottom': '10px'})
-                        ])
-                    ])
-                ]
+                for section in sections:
+                    if ':' in section:
+                        # Split into header and content
+                        header, content = section.split(':', 1)
+                        header = header.strip()
+                        content = content.strip()
+                        
+                        # Add the header
+                        formatted_content.append(
+                            html.H6(header + ':', style={
+                                'color': 'white',
+                                'marginBottom': '15px',
+                                'marginTop': '20px',
+                                'fontWeight': 'bold'
+                            })
+                        )
+                        
+                        # Check if content starts with numbers or bullets
+                        if any(content.strip().startswith(str(i) + '.') for i in range(1, 10)):
+                            # Handle numbered list
+                            items = []
+                            current_item = None
+                            
+                            for line in content.split('\n'):
+                                line = line.strip()
+                                if line and line[0].isdigit() and '. ' in line:
+                                    if current_item:
+                                        items.append(current_item)
+                                    number, text = line.split('. ', 1)
+                                    current_item = {'text': text, 'subitems': []}
+                                elif line.startswith('-') and current_item:
+                                    current_item['subitems'].append(line.lstrip('-').strip())
+                                elif current_item and line:
+                                    # Append to current item's text if it's a continuation
+                                    current_item['text'] += ' ' + line
+                            
+                            if current_item:
+                                items.append(current_item)
+                            
+                            # Create ordered list with items
+                            formatted_content.append(html.Ol([
+                                html.Li([
+                                    item['text'],
+                                    html.Ul([html.Li(subitem, style={'color': 'white'}) for subitem in item['subitems']])
+                                ] if item['subitems'] else item['text'],
+                                style={'color': 'white', 'marginBottom': '12px', 'lineHeight': '1.5'})
+                                for item in items
+                            ], style={'paddingLeft': '20px'}))
+                            
+                        elif content.strip().startswith('-'):
+                            # Handle bullet points
+                            items = [item.strip().lstrip('-') for item in content.split('\n') if item.strip()]
+                            formatted_content.append(html.Ul([
+                                html.Li(item, style={'color': 'white', 'marginBottom': '12px', 'lineHeight': '1.5'})
+                                for item in items
+                            ], style={'paddingLeft': '20px'}))
+                        else:
+                            # Regular paragraph
+                            formatted_content.append(
+                                html.P(content, style={'color': 'white', 'marginBottom': '15px', 'lineHeight': '1.5'})
+                            )
+                    else:
+                        # Regular paragraph without header
+                        formatted_content.append(
+                            html.P(section, style={'color': 'white', 'marginBottom': '15px', 'lineHeight': '1.5'})
+                        )
                 
-                email_content = html.Div([
-                    html.H6("Email Analysis", style={'color': 'white', 'marginBottom': '15px'}),
-                    html.Div([
-                        html.P("Subject: General Brand Update", style={'color': 'white', 'fontWeight': 'bold', 'marginBottom': '10px'}),
-                        html.P("Dear Brand Manager,", style={'color': 'white', 'marginBottom': '10px'}),
-                        html.P("Please review the current brand performance metrics and consider implementing the suggested next steps to improve customer satisfaction and market position.", style={'color': 'white', 'marginBottom': '10px'}),
-                        html.P("Best regards,", style={'color': 'white', 'marginBottom': '5px'}),
-                        html.P("AI Brand Analyst", style={'color': 'white'})
-                    ], className="email-analysis-content")
+                analysis_content = html.Div(formatted_content)
+            except Exception as e:
+                print(f"Error in analysis: {str(e)}")  # Debug logging
+                analysis_content = html.Div([
+                    html.H6("Error:", style={'color': 'white', 'marginBottom': '15px'}),
+                    html.P(f"Failed to get analysis: {str(e)}", style={'color': 'white'})
                 ])
             
-            return analysis_content, "", None, email_content, {
-                'marginTop': '20px',
-                'padding': '20px',
-                'backgroundColor': '#636e72',
-                'borderRadius': '5px',
-                'display': 'block'
-            }, 'email-analysis-container show'
+            return analysis_content, "", None, {'display': 'none'}, 'email-analysis-container'
             
     except Exception as e:
-        return html.P(f"Error: {str(e)}", style={'color': 'white'}), "", None, None, {'display': 'none'}, 'email-analysis-container'
+        return html.P(f"Error: {str(e)}", style={'color': 'white'}), "", None, {'display': 'none'}, 'email-analysis-container'
 
 # Update the tooltip callback to show multiple top features
 @app.callback(

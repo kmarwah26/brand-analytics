@@ -41,6 +41,13 @@ try:
     data = pd.read_csv(data_path)
     print(f"Data shape: {data.shape}")
     print(f"Data columns: {data.columns}")
+
+    # Load sales from CSV
+    sales_path = os.path.join(current_dir, 'app_data', 'monthly_sales_toys.csv')
+    sales_data = pd.read_csv(sales_path)
+    print(f"Data shape: {sales_data.shape}")
+    print(f"Data columns: {sales_data.columns}")
+
     
     # Convert the date column to a datetime object
     data['date'] = pd.to_datetime(data['date'], errors='coerce')
@@ -82,38 +89,6 @@ try:
         lambda x: 'Love' if x == 5 else 'Great' if x == 4 else 'Fine' if x == 3 else 'Disappointed' if x == 2 else 'Bad' if x == 1 else 'Neutral'
     )
     
-    # Filter out specific brands
-    excluded_brands = [
-        'Hasbro',
-        'Hasbro Gaming',
-        'Hot Wheels',
-        'L.O.L. Surprise!',
-        'Learning Resources',
-        'Ravensburger',
-        'Schleich',
-        'VTech',
-        'Crayola',
-        'Fisher-Price',
-        'PASOW',
-        'TR Industrial',
-        'GE',
-        'Bolt Dropper',
-        'Energizer',
-        'Cambridge Resources',
-        'Indoor Tactics',
-        'JOTO',
-        'D-Line',
-        'Wrap-It Storage',
-        'OHill',
-        'iFixit',
-        'Bayco',
-        'Gorilla',
-        'DEWALT',
-        'Mattel',
-        'Mattel Games'
-    ]
-    data = data[~data['brand'].isin(excluded_brands)]
-
     
     # Add negative reviews for LEGO across different months
     april_2023 = pd.Timestamp('2023-04-15')
@@ -1433,35 +1408,38 @@ def update_visuals(n_clicks, category, brand, retailer, date_range, relayoutData
         )
 
         # Create monthly orders chart
-        # Filter orders data for the selected brand and date range
+        # Filter sales data for the selected brand and date range
         start_date = pd.to_datetime(date_range[0], unit='s')
         end_date = pd.to_datetime(date_range[1], unit='s')
         
-        brand_orders = orders_df[
-            (orders_df['brand'] == brand) & 
-            (orders_df['date'] >= start_date) &
-            (orders_df['date'] <= end_date)
+        # Convert month column in sales_data to datetime if not already
+        sales_data['month'] = pd.to_datetime(sales_data['month'])
+        
+        brand_sales = sales_data[
+            (sales_data['brand'] == brand) & 
+            (sales_data['month'] >= start_date) &
+            (sales_data['month'] <= end_date)
         ]
         
         # Group by month
-        monthly_orders = brand_orders.groupby(
-            pd.to_datetime(brand_orders['date']).dt.to_period('M')
+        monthly_sales = brand_sales.groupby(
+            pd.to_datetime(brand_sales['month']).dt.to_period('M')
         ).agg({
-            'orders': 'sum',
+            'units': 'sum',
             'returns': 'sum'
         }).reset_index()
         
         # Convert period to string for plotting
-        monthly_orders['date'] = monthly_orders['date'].astype(str)
+        monthly_sales['date'] = monthly_sales['month'].astype(str)
         
         orders_fig = go.Figure()
         
-        # Add line for orders
+        # Add line for orders (using units)
         orders_fig.add_trace(go.Scatter(
-            x=monthly_orders['date'],
-            y=monthly_orders['orders'],
+            x=monthly_sales['date'],
+            y=monthly_sales['units'],
             mode='lines+markers+text',
-            name='Orders',
+            name='Units Sold',
             line=dict(
                 color='#FFA500',
                 width=3
@@ -1471,21 +1449,21 @@ def update_visuals(n_clicks, category, brand, retailer, date_range, relayoutData
                 color='#FFA500',
                 line=dict(width=2, color='#1a1a1a')
             ),
-            text=[f'{int(x):,}' for x in monthly_orders['orders']],
+            text=[f'{int(x):,}' for x in monthly_sales['units']],
             textposition='top center',
             textfont=dict(
                 color='white',
                 size=11
             ),
             hovertemplate='<span style="color: #2d3436">Month: %{x}</span><br>' +
-                         '<span style="color: #2d3436">Orders: %{y:,.0f}</span><br>' +
+                         '<span style="color: #2d3436">Units Sold: %{y:,.0f}</span><br>' +
                          '<extra></extra>'
         ))
         
         # Add line for returns
         orders_fig.add_trace(go.Scatter(
-            x=monthly_orders['date'],
-            y=monthly_orders['returns'],
+            x=monthly_sales['date'],
+            y=monthly_sales['returns'],
             mode='lines+markers+text',
             name='Returns',
             line=dict(
@@ -1497,7 +1475,7 @@ def update_visuals(n_clicks, category, brand, retailer, date_range, relayoutData
                 color='#e74c3c',
                 line=dict(width=2, color='#1a1a1a')
             ),
-            text=[f'{int(x):,}' for x in monthly_orders['returns']],
+            text=[f'{int(x):,}' for x in monthly_sales['returns']],
             textposition='bottom center',
             textfont=dict(
                 color='white',
@@ -1507,19 +1485,19 @@ def update_visuals(n_clicks, category, brand, retailer, date_range, relayoutData
                          '<span style="color: #2d3436">Returns: %{y:,.0f}</span><br>' +
                          '<span style="color: #2d3436">Return Rate: %{customdata:.1%}</span><br>' +
                          '<extra></extra>',
-            customdata=[x/y for x, y in zip(monthly_orders['returns'], monthly_orders['orders'])]
+            customdata=[x/y for x, y in zip(monthly_sales['returns'], monthly_sales['units'])]
         ))
         
         orders_fig.update_layout(
             xaxis_title='Month',
-            yaxis_title='Number of Orders/Returns',
+            yaxis_title='Number of Units/Returns',
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
             font=dict(color='white'),
             xaxis=dict(
                 gridcolor='#404040',
                 tickangle=45,
-                range=[monthly_orders['date'].min(), monthly_orders['date'].max()]
+                range=[monthly_sales['date'].min(), monthly_sales['date'].max()]
             ),
             yaxis=dict(
                 gridcolor='#404040',
@@ -1559,22 +1537,22 @@ def update_visuals(n_clicks, category, brand, retailer, date_range, relayoutData
             health_color = '#e74c3c'  # Red
             
         # Calculate sales share metrics with random YoY growth
-        total_category_orders = orders_df[
-            (orders_df['date'] >= start_date) & 
-            (orders_df['date'] <= end_date)
-        ]['orders'].sum()
+        total_category_units = sales_data[
+            (sales_data['month'] >= start_date) & 
+            (sales_data['month'] <= end_date)
+        ]['units'].sum()
         
-        brand_orders = orders_df[
-            (orders_df['brand'] == brand) & 
-            (orders_df['date'] >= start_date) & 
-            (orders_df['date'] <= end_date)
-        ]['orders'].sum()
+        brand_units = sales_data[
+            (sales_data['brand'] == brand) & 
+            (sales_data['month'] >= start_date) & 
+            (sales_data['month'] <= end_date)
+        ]['units'].sum()
         
-        sales_share = (brand_orders / total_category_orders * 100) if total_category_orders > 0 else 0
-        sales_rank = orders_df[
-            (orders_df['date'] >= start_date) & 
-            (orders_df['date'] <= end_date)
-        ].groupby('brand')['orders'].sum().rank(ascending=False)[brand]
+        sales_share = (brand_units / total_category_units * 100) if total_category_units > 0 else 0
+        sales_rank = sales_data[
+            (sales_data['month'] >= start_date) & 
+            (sales_data['month'] <= end_date)
+        ].groupby('brand')['units'].sum().rank(ascending=False)[brand]
         sales_yoy_growth = np.random.uniform(-15, 25)  # Random growth between -15% and 25%
 
         # Calculate units share metrics with random YoY growth
@@ -1623,16 +1601,16 @@ def update_visuals(n_clicks, category, brand, retailer, date_range, relayoutData
     except Exception as e:
         print(f"Error in callback: {str(e)}")
         empty_fig = create_empty_fig()
-        return (
-            empty_fig,  # sentiment-treemap
-            empty_fig,  # monthly-reviews-chart
-            empty_fig,  # monthly-orders-chart
+        return [
+            empty_fig.to_dict(),  # sentiment-treemap
+            empty_fig.to_dict(),  # monthly-reviews-chart
+            empty_fig.to_dict(),  # monthly-orders-chart
             "0%",  # brand-health-score
             "0%",  # competitive-score
             "0%",  # product-score
             "0.0",  # average-rating
-            empty_fig,  # market-share-trend
-            empty_fig,  # pricing-comparison
+            empty_fig.to_dict(),  # market-share-trend
+            empty_fig.to_dict(),  # pricing-comparison
             None,  # positive-wordcloud
             None,  # negative-wordcloud
             None,  # brand-positive-wordcloud
@@ -1643,23 +1621,11 @@ def update_visuals(n_clicks, category, brand, retailer, date_range, relayoutData
             "0",  # negative-reviews-counter
             "",  # selected-range-display
             "",  # wordcloud-range-display
-            "0%",  # sales-share-value
-            "#1",  # sales-rank-value
-            "0.0%",  # sales-growth-value
-            "0%",  # units-share-value
-            "#1",  # units-rank-value
-            "0.0%",  # units-growth-value
             "",  # sales-brand-name
             "",  # units-brand-name
             "",  # reviews-brand-name
-            "",  # rating-brand-name
-            "0%",  # reviews-share-value
-            "#1",  # reviews-rank-value
-            "0.0%",  # reviews-growth-value
-            "0.0/5.0",  # rating-value
-            "#1",  # rating-rank-value
-            "0.0%"  # rating-change-value
-        )
+            ""   # rating-brand-name
+        ]
 
 # Update the callback to handle all tab switching
 @app.callback(

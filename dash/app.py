@@ -25,7 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Ensure environment variable is set correctly
-#assert os.getenv('DATABRICKS_WAREHOUSE_ID')
+assert os.getenv('DATABRICKS_WAREHOUSE_ID')
 #assert os.getenv('SERVING_ENDPOINT')
 
 # Load data from SQL
@@ -253,71 +253,6 @@ try:
 except Exception as e:
     print(f"An error occurred loading data: {str(e)}")
     data = pd.DataFrame()
-
-# Generate synthetic orders data
-def generate_synthetic_orders(data):
-    # Get unique dates and brands
-    dates = pd.date_range(start=data['date'].min(), end=data['date'].max(), freq='D')
-    brands = data['brand'].unique()
-    
-    # Create empty DataFrame for orders
-    orders_data = []
-    
-    # Generate orders for each brand
-    for brand in brands:
-        # Get brand's review data to use as base
-        brand_data = data[data['brand'] == brand]
-        
-        # Generate base orders (using review count as a rough proxy)
-        base_orders = len(brand_data) * np.random.uniform(0.5, 2.0)  # Random multiplier
-        
-        # Generate daily orders
-        for date in dates:
-            # Add some randomness and seasonality
-            seasonality = 1 + 0.3 * np.sin(2 * np.pi * date.dayofyear / 365)  # Yearly seasonality
-            weekly_pattern = 1 + 0.2 * np.sin(2 * np.pi * date.dayofweek / 7)  # Weekly pattern
-            random_factor = np.random.normal(1, 0.1)  # Random daily variation
-            
-            # Calculate daily orders
-            daily_orders = int(base_orders * seasonality * weekly_pattern * random_factor / len(dates))
-            
-            # Special handling for LEGO brand to show decline
-            if brand == 'LEGO':
-                # Define decline factors for different months
-                decline_factors = {
-                    '2023-04': 1.0,    # April: Normal
-                    '2023-05': 0.7,    # May: 30% decline
-                    '2023-06': 0.4,    # June: 60% decline
-                    '2023-07': 0.2     # July: 80% decline
-                }
-                
-                # Get the month key
-                month_key = date.strftime('%Y-%m')
-                
-                # Apply decline factor if in the specified months
-                if month_key in decline_factors:
-                    daily_orders = int(daily_orders * decline_factors[month_key])
-            
-            # Calculate returns (typically 5-15% of orders, higher for LEGO during decline)
-            if brand == 'LEGO' and month_key in decline_factors:
-                # Higher return rate during decline period
-                return_rate = 0.15 + (1 - decline_factors[month_key]) * 0.2  # Increases as orders decline
-            else:
-                return_rate = np.random.uniform(0.05, 0.15)  # Normal return rate
-            
-            daily_returns = int(daily_orders * return_rate)
-            
-            orders_data.append({
-                'date': date,
-                'brand': brand,
-                'orders': max(0, daily_orders),  # Ensure non-negative
-                'returns': max(0, daily_returns)  # Ensure non-negative
-            })
-    
-    return pd.DataFrame(orders_data)
-
-# Generate the synthetic orders data
-orders_df = generate_synthetic_orders(data)
 
 # Initialize the Dash app with Bootstrap styling
 app = dash.Dash(__name__, 
@@ -921,12 +856,11 @@ app.layout = dbc.Container([
     Input('category-filter', 'value')
 )
 def update_brand_options(selected_category):
-    logger.info(f"update_brand_options triggered with category: {selected_category}")
-    filtered_data = data[data['category'] == selected_category]
+    # Get unique brands from sales_data for the selected category
+    filtered_data = sales_data[sales_data['category'] == selected_category]
     brands = sorted(filtered_data['brand'].unique())
     options = [{'label': brd, 'value': brd} for brd in brands]
     value = brands[0] if brands else None
-    logger.info(f"Returning {len(options)} brand options")
     return options, value
 
 
@@ -1419,6 +1353,7 @@ def update_visuals(n_clicks, category, brand, retailer, date_range):
         # Convert month column in sales_data to datetime if not already
         sales_data['month'] = pd.to_datetime(sales_data['month'])
         
+        # Filter sales data for the selected brand and date range
         brand_sales = sales_data[
             (sales_data['brand'] == brand) & 
             (sales_data['month'] >= start_date) &

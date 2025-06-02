@@ -14,30 +14,44 @@ import io
 from databricks import sql
 from databricks.sdk.core import Config
 import time
-from model_serving_utils import query_endpoint
+import logging
 
-# print(".....")
-# print(os.getcwd())
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 # Ensure environment variable is set correctly
-assert os.getenv('DATABRICKS_WAREHOUSE_ID')
-assert os.getenv('SERVING_ENDPOINT')
-
+#assert os.getenv('DATABRICKS_WAREHOUSE_ID')
+#assert os.getenv('SERVING_ENDPOINT')
 
 # Load data from SQL
 def sqlQuery(query: str) -> pd.DataFrame:
     """Execute a SQL query and return the result as a pandas DataFrame."""
-    cfg = Config()  # Pull environment variables for auth
-    with sql.connect(
-        server_hostname=cfg.host,
-        http_path=f"/sql/1.0/warehouses/{os.getenv('DATABRICKS_WAREHOUSE_ID')}",
-        credentials_provider=lambda: cfg.authenticate
-    ) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(query)
-            return cursor.fetchall_arrow().to_pandas()
+    logger.info(f"Executing SQL query: {query[:100]}...")  # Log first 100 chars of query
+    start_time = time.time()
+    try:
+        cfg = Config()  # Pull environment variables for auth
+        with sql.connect(
+            server_hostname=cfg.host,
+            http_path=f"/sql/1.0/warehouses/{os.getenv('DATABRICKS_WAREHOUSE_ID')}",
+            credentials_provider=lambda: cfg.authenticate
+        ) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(query)
+                result = cursor.fetchall_arrow().to_pandas()
+                logger.info(f"SQL query completed in {time.time() - start_time:.2f} seconds. Returned {len(result)} rows.")
+                return result
+    except Exception as e:
+        logger.error(f"SQL query failed: {str(e)}")
+        raise
+
 try:
     data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
+    sales_data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.monthly_brand_metrics WHERE category = 'Toys & Games'")
 
     # Load data from CSV
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -45,6 +59,13 @@ try:
     #data = pd.read_csv(data_path)
     print(f"Data shape: {data.shape}")
     print(f"Data columns: {data.columns}")
+
+    # Load sales from CSV
+    sales_path = os.path.join(current_dir, 'app_data', 'monthly_sales_toys.csv')
+    #sales_data = pd.read_csv(sales_path)
+    print(f"Data shape: {sales_data.shape}")
+    print(f"Data columns: {sales_data.columns}")
+
     
     # Convert the date column to a datetime object
     data['date'] = pd.to_datetime(data['date'], errors='coerce')
@@ -80,46 +101,13 @@ try:
     
     # Apply sentiment mapping and fill any missing values based on sentiment_score
     data['sentiment'] = data['sentiment'].map(sentiment_mapping)
+    #data['sentiment'] = data['sentiment'].str.capitalize()
  
 
     data.loc[data['sentiment'].isna(), 'sentiment'] = data.loc[data['sentiment'].isna(), 'sentiment_score'].apply(
         lambda x: 'Love' if x == 5 else 'Great' if x == 4 else 'Fine' if x == 3 else 'Disappointed' if x == 2 else 'Bad' if x == 1 else 'Neutral'
     )
     
-    # Filter out specific brands
-    excluded_brands = [
-        'Hasbro',
-        'Hasbro Gaming',
-        'Hot Wheels',
-        'L.O.L. Surprise!',
-        'Learning Resources',
-        'Ravensburger',
-        'Schleich',
-        'VTech',
-        'Crayola',
-        'Fisher-Price',
-        'PASOW',
-        'TR Industrial',
-        'GE',
-        'Bolt Dropper',
-        'Energizer',
-        'Cambridge Resources',
-        'Indoor Tactics',
-        'JOTO',
-        'D-Line',
-        'Wrap-It Storage',
-        'OHill',
-        'iFixit',
-        'Bayco',
-        'Gorilla',
-        'DEWALT',
-        'Mattel',
-        'Mattel Games'
-    ]
-    data = data[~data['brand'].isin(excluded_brands)]
-    
-    # Remove the Mattel brand combination since we're excluding Mattel
-    # data['brand'] = data['brand'].replace('Mattel Games', 'Mattel')
     
     # Add negative reviews for LEGO across different months
     april_2023 = pd.Timestamp('2023-04-15')
@@ -266,6 +254,71 @@ except Exception as e:
     print(f"An error occurred loading data: {str(e)}")
     data = pd.DataFrame()
 
+# Generate synthetic orders data
+def generate_synthetic_orders(data):
+    # Get unique dates and brands
+    dates = pd.date_range(start=data['date'].min(), end=data['date'].max(), freq='D')
+    brands = data['brand'].unique()
+    
+    # Create empty DataFrame for orders
+    orders_data = []
+    
+    # Generate orders for each brand
+    for brand in brands:
+        # Get brand's review data to use as base
+        brand_data = data[data['brand'] == brand]
+        
+        # Generate base orders (using review count as a rough proxy)
+        base_orders = len(brand_data) * np.random.uniform(0.5, 2.0)  # Random multiplier
+        
+        # Generate daily orders
+        for date in dates:
+            # Add some randomness and seasonality
+            seasonality = 1 + 0.3 * np.sin(2 * np.pi * date.dayofyear / 365)  # Yearly seasonality
+            weekly_pattern = 1 + 0.2 * np.sin(2 * np.pi * date.dayofweek / 7)  # Weekly pattern
+            random_factor = np.random.normal(1, 0.1)  # Random daily variation
+            
+            # Calculate daily orders
+            daily_orders = int(base_orders * seasonality * weekly_pattern * random_factor / len(dates))
+            
+            # Special handling for LEGO brand to show decline
+            if brand == 'LEGO':
+                # Define decline factors for different months
+                decline_factors = {
+                    '2023-04': 1.0,    # April: Normal
+                    '2023-05': 0.7,    # May: 30% decline
+                    '2023-06': 0.4,    # June: 60% decline
+                    '2023-07': 0.2     # July: 80% decline
+                }
+                
+                # Get the month key
+                month_key = date.strftime('%Y-%m')
+                
+                # Apply decline factor if in the specified months
+                if month_key in decline_factors:
+                    daily_orders = int(daily_orders * decline_factors[month_key])
+            
+            # Calculate returns (typically 5-15% of orders, higher for LEGO during decline)
+            if brand == 'LEGO' and month_key in decline_factors:
+                # Higher return rate during decline period
+                return_rate = 0.15 + (1 - decline_factors[month_key]) * 0.2  # Increases as orders decline
+            else:
+                return_rate = np.random.uniform(0.05, 0.15)  # Normal return rate
+            
+            daily_returns = int(daily_orders * return_rate)
+            
+            orders_data.append({
+                'date': date,
+                'brand': brand,
+                'orders': max(0, daily_orders),  # Ensure non-negative
+                'returns': max(0, daily_returns)  # Ensure non-negative
+            })
+    
+    return pd.DataFrame(orders_data)
+
+# Generate the synthetic orders data
+orders_df = generate_synthetic_orders(data)
+
 # Initialize the Dash app with Bootstrap styling
 app = dash.Dash(__name__, 
                 external_stylesheets=[dbc.themes.DARKLY],
@@ -311,131 +364,7 @@ SPINNER_STYLE = {
     'color': '#3498db'
 }
 
-# Add custom CSS for animationsee
-app.index_string = '''
-<!DOCTYPE html>
-<html>
-    <head>
-        {%metas%}
-        <title>{%title%}</title>
-        {%favicon%}
-        {%css%}
-        <style>
-            /* Dark theme for dropdowns */
-            .Select-control {
-                background-color: #2d3436 !important;
-                border-color: #636e72 !important;
-            }
-            .Select-menu-outer {
-                background-color: #2d3436 !important;
-                border-color: #636e72 !important;
-            }
-            .Select-option {
-                background-color: #2d3436 !important;
-                color: white !important;
-            }
-            .Select-option:hover {
-                background-color: #636e72 !important;
-            }
-            .Select-value-label {
-                color: white !important;
-            }
-            .Select-placeholder {
-                color: #b2bec3 !important;
-            }
-            .Select--single > .Select-control .Select-value {
-                color: white !important;
-            }
-            .Select--multi .Select-value {
-                background-color: #636e72 !important;
-                border-color: #b2bec3 !important;
-                color: white !important;
-            }
-            .Select--multi .Select-value-icon {
-                border-color: #b2bec3 !important;
-                color: white !important;
-            }
-            .Select--multi .Select-value-icon:hover {
-                background-color: #b2bec3 !important;
-                color: #2d3436 !important;
-            }
-            .Select-arrow {
-                border-color: #b2bec3 transparent transparent !important;
-            }
-            .Select.is-open > .Select-control .Select-arrow {
-                border-color: transparent transparent #b2bec3 !important;
-            }
-            
-            /* Chatbot icon styles */
-            .chatbot-icon {
-                position: fixed;
-                bottom: 30px;
-                right: 30px;
-                width: 60px;
-                height: 60px;
-                background-color: #3498db;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-                cursor: pointer;
-                transition: transform 0.2s ease-in-out;
-                z-index: 1000;
-            }
-            
-            .chatbot-icon:hover {
-                transform: scale(1.1);
-                background-color: #2980b9;
-            }
-            
-            .chatbot-icon svg {
-                width: 30px;
-                height: 30px;
-                fill: white;
-            }
 
-            /* Email analysis animation */
-            .email-analysis-container {
-                opacity: 0;
-                transform: translateY(20px);
-                transition: all 0.3s ease-in-out;
-            }
-
-            .email-analysis-container.show {
-                opacity: 1;
-                transform: translateY(0);
-            }
-
-            .email-analysis-content {
-                background-color: #2d3436;
-                padding: 15px;
-                border-radius: 5px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                transition: all 0.3s ease-in-out;
-            }
-
-            .email-analysis-content:hover {
-                box-shadow: 0 6px 8px rgba(0, 0, 0, 0.2);
-                transform: translateY(-2px);
-            }
-        </style>
-    </head>
-    <body>
-        {%app_entry%}
-        <footer>
-            {%config%}
-            {%scripts%}
-            {%renderer%}
-        </footer>
-        <a href="/chat" target="_blank" class="chatbot-icon" title="Open Chatbot">
-            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
-            </svg>
-        </a>
-    </body>
-</html>
-'''
 
 # Function to encode image to base64
 def encode_image(image_path):
@@ -446,12 +375,56 @@ def encode_image(image_path):
     except:
         return None
 
+# Function to generate wordcloud
+def generate_wordcloud(texts, max_words=50, background_color='#2d3436'):
+    if not texts or all(pd.isna(texts)):
+        return None
+    try:
+        # Clean and convert texts to strings
+        cleaned_texts = []
+        for text in texts:
+            # Handle NaN/None values
+            if pd.isna(text):
+                continue
+            # Convert to string and clean
+            try:
+                text_str = str(text).strip()
+                if text_str:  # Only add non-empty strings
+                    cleaned_texts.append(text_str)
+            except:
+                continue
+        
+        if not cleaned_texts:
+            return None
+            
+        text = ' '.join(cleaned_texts)
+        wordcloud = WordCloud(
+            width=800,
+            height=400,
+            background_color=background_color,
+            colormap='viridis',
+            max_words=50,  # Limited to 50 words
+            contour_width=1,
+            contour_color='#636e72',
+            min_font_size=10,  # Added to ensure readability
+            max_font_size=100  # Added to control maximum word size
+        ).generate(text)
+        
+        # Convert to base64 for display
+        img = io.BytesIO()
+        wordcloud.to_image().save(img, format='PNG')
+        img.seek(0)
+        return f'data:image/png;base64,{base64.b64encode(img.getvalue()).decode()}'
+    except Exception as e:
+        print(f"Error generating wordcloud: {str(e)}")
+        return None
+
 # Layout
 app.layout = dbc.Container([
     dcc.Store(id='page-load-trigger', data=0),
     dbc.Row([
         dbc.Col([
-            html.H1("Brand Manager", className="text-center my-4 text-light"),
+            html.H1("Brand Analyzer", className="text-center my-4 text-light"),
             html.Div([
                 html.Span("BUILT ON", style={
                     'color': 'white',
@@ -474,57 +447,6 @@ app.layout = dbc.Container([
         ], width=12)
     ]),
     
-    # AI Agent Modal
-    dbc.Modal([
-        dbc.ModalHeader(dbc.ModalTitle("Brand AI Agent"), style={'backgroundColor': '#2d3436', 'color': 'white'}),
-        dbc.ModalBody([
-            html.Div([
-                html.Div(id='ai-loading-message', style={'color': 'white', 'marginBottom': '20px'}),
-                dcc.Loading(
-                    id="loading-analysis",
-                    type="circle",
-                    children=[
-                        html.Div(id='ai-analysis-content', style={'marginTop': '20px'})
-                    ],
-                    style={'backgroundColor': '#2d3436'},
-                    color='#3498db'
-                ),
-                dbc.Row([
-                    dbc.Col([
-                        dbc.Button(
-                            "Quick Tip",
-                            id="recommendations-button",
-                            color="success",
-                            className="mt-3 me-2",
-                            style={'backgroundColor': '#2ecc71', 'borderColor': '#2ecc71'}
-                        ),
-                        dbc.Button(
-                            "Analyze Trends",
-                            id="analyze-button",
-                            color="primary",
-                            className="mt-3",
-                            style={'backgroundColor': '#3498db', 'borderColor': '#3498db'}
-                        )
-                    ], width=12)
-                ]),
-                html.Div(
-                    id='email-analysis',
-                    style={
-                        'marginTop': '20px',
-                        'padding': '20px',
-                        'backgroundColor': '#636e72',
-                        'borderRadius': '5px',
-                        'display': 'none'  # Hidden by default
-                    }
-                )
-            ])
-        ], style={'backgroundColor': '#2d3436'}),
-        dbc.ModalFooter(
-            dbc.Button("Close", id="close-ai-modal", className="ms-auto", n_clicks=0),
-            style={'backgroundColor': '#2d3436'}
-        ),
-    ], id="ai-agent-modal", size="lg", is_open=False),
-    
     # Filter Section
     dbc.Row([
         dbc.Col([
@@ -533,23 +455,57 @@ app.layout = dbc.Container([
                 dbc.CardBody([
                     dbc.Row([
                         dbc.Col([
+                            dbc.Label("Retailer", className="text-light"),
+                            dcc.Dropdown(
+                                id='retailer-dummy',
+                                options=[{'label': 'Amazon', 'value': 'Amazon'}],
+                                value='Amazon',
+                                className="mb-3",
+                                style={'color': 'black'}
+                            )
+                        ], width=2),
+                        dbc.Col([
                             dbc.Label("Category", className="text-light"),
                             dcc.Dropdown(
                                 id='category-filter',
                                 options=[{'label': cat, 'value': cat} for cat in sorted(data['category'].unique())],
-                                value= None,  # Set default value
-                                className="mb-3"
+                                value='Toys & Games',
+                                className="mb-3",
+                                style={'color': 'black'}
                             )
-                        ], width=6),
+                        ], width=3),
                         dbc.Col([
                             dbc.Label("Brand", className="text-light"),
                             dcc.Dropdown(
                                 id='brand-filter',
-                                options=[],  # Will be populated by callback
-                                value=None,  # Will be set by callback
+                                options=[],
+                                value=None,
+                                className="mb-3",
+                                style={'color': 'black'}
+                            )
+                        ], width=3),
+                        dbc.Col([
+                            dbc.Label("Date Range", className="text-light"),
+                            dcc.RangeSlider(
+                                id='date-range-slider',
+                                min=pd.to_datetime(data['date'].min()).timestamp(),
+                                max=pd.to_datetime('2023-07-31').timestamp(),
+                                step=30*24*60*60,  # 30 days in seconds
+                                value=[
+                                    pd.to_datetime(data['date'].min()).timestamp(),
+                                    pd.to_datetime('2023-07-31').timestamp()
+                                ],
+                                marks={
+                                    int(pd.to_datetime(date).timestamp()): date.strftime('%b %Y')
+                                    for date in pd.date_range(
+                                        start=data['date'].min(),
+                                        end='2023-07-31',
+                                        freq='3M'
+                                    )
+                                },
                                 className="mb-3"
                             )
-                        ], width=6)
+                        ], width=4)
                     ])
                 ])
             ], style=CARD_STYLE)
@@ -562,41 +518,217 @@ app.layout = dbc.Container([
         dbc.Tab([
             # Brand Health Counters Row
             dbc.Row([
+                # Sales Share Card
                 dbc.Col([
                     dbc.Card([
                         dbc.CardBody([
-                            html.H3("Brand Health Tracker", className="text-center mb-3", style={'color': 'white'}),
-                            html.H2(id='brand-health-score', className="text-center mb-2", style={'color': '#2ecc71', 'fontSize': '2.5rem'}),
-                            html.P("Overall Brand Health Score", className="text-center text-light")
+                            html.H3("Sales Share", className="text-center mb-3", style={'color': 'white'}),
+                            html.H2(id='brand-health-score', className="text-center mb-2", style={'color': '#2ecc71', 'fontSize': '2.5rem', 'cursor': 'pointer'})
                         ])
-                    ], style={**CARD_STYLE, 'backgroundColor': '#2d4a3e'})  # Lighter green
+                    ], style={**CARD_STYLE, 'backgroundColor': '#2d4a3e'}),  # Lighter green
+                    dbc.Tooltip(
+                        html.Div([
+                            html.H6("Sales Share Summary", style={
+                                'color': 'white',
+                                'marginBottom': '15px',
+                                'fontSize': '1.1rem',
+                                'fontWeight': 'bold',
+                                'borderBottom': '2px solid #636e72',
+                                'paddingBottom': '5px'
+                            }),
+                            html.Div([
+                                html.Span("Brand:", style={'color': '#b2bec3'}),
+                                html.Span(id='sales-brand-name', style={'color': '#2ecc71', 'fontWeight': 'bold'})
+                            ], style={
+                                'color': '#b2bec3',
+                                'marginBottom': '8px',
+                                'fontSize': '0.9rem',
+                                'display': 'flex',
+                                'justifyContent': 'space-between',
+                                'alignItems': 'center'
+                            }),
+                            html.Div([
+                                html.P("Sales Share represents the brand's market share based on total sales volume. It's calculated by comparing the brand's sales to the total category sales. A higher score indicates stronger market presence and sales performance.", 
+                                    style={
+                                        'color': '#b2bec3',
+                                        'fontSize': '0.85rem',
+                                        'marginTop': '15px',
+                                        'paddingTop': '15px',
+                                        'borderTop': '1px solid #636e72',
+                                        'lineHeight': '1.4'
+                                    }
+                                )
+                            ])
+                        ], style={
+                            'backgroundColor': '#1e272e',
+                            'padding': '15px',
+                            'borderRadius': '8px',
+                            'boxShadow': '0 4px 6px rgba(0, 0, 0, 0.2)',
+                            'border': '1px solid #636e72',
+                            'minWidth': '250px'
+                        }),
+                        target="brand-health-score",
+                        placement="top"
+                    )
                 ], width=3),
+                # Units Share Card
                 dbc.Col([
                     dbc.Card([
                         dbc.CardBody([
-                            html.H3("Competitive Positioning", className="text-center mb-3", style={'color': 'white'}),
-                            html.H2(id='competitive-score', className="text-center mb-2", style={'color': '#3498db', 'fontSize': '2.5rem'}),
-                            html.P("Market Share & Position", className="text-center text-light")
+                            html.H3("Units Share", className="text-center mb-3", style={'color': 'white'}),
+                            html.H2(id='competitive-score', className="text-center mb-2", style={'color': '#3498db', 'fontSize': '2.5rem', 'cursor': 'pointer'})
                         ])
-                    ], style={**CARD_STYLE, 'backgroundColor': '#2d3e4a'})  # Lighter blue
+                    ], style={**CARD_STYLE, 'backgroundColor': '#2d3e4a'}),  # Lighter blue
+                    dbc.Tooltip(
+                        html.Div([
+                            html.H6("Units Share Summary", style={
+                                'color': 'white',
+                                'marginBottom': '15px',
+                                'fontSize': '1.1rem',
+                                'fontWeight': 'bold',
+                                'borderBottom': '2px solid #636e72',
+                                'paddingBottom': '5px'
+                            }),
+                            html.Div([
+                                html.Span("Brand:", style={'color': '#b2bec3'}),
+                                html.Span(id='units-brand-name', style={'color': '#3498db', 'fontWeight': 'bold'})
+                            ], style={
+                                'color': '#b2bec3',
+                                'marginBottom': '8px',
+                                'fontSize': '0.9rem',
+                                'display': 'flex',
+                                'justifyContent': 'space-between',
+                                'alignItems': 'center'
+                            }),
+                            html.Div([
+                                html.P("Units Share represents the brand's market share based on the number of units sold. It's calculated by comparing the brand's unit sales to the total category unit sales. A higher score indicates stronger market penetration and volume performance.", 
+                                    style={
+                                        'color': '#b2bec3',
+                                        'fontSize': '0.85rem',
+                                        'marginTop': '15px',
+                                        'paddingTop': '15px',
+                                        'borderTop': '1px solid #636e72',
+                                        'lineHeight': '1.4'
+                                    }
+                                )
+                            ])
+                        ], style={
+                            'backgroundColor': '#1e272e',
+                            'padding': '15px',
+                            'borderRadius': '8px',
+                            'boxShadow': '0 4px 6px rgba(0, 0, 0, 0.2)',
+                            'border': '1px solid #636e72',
+                            'minWidth': '250px'
+                        }),
+                        target="competitive-score",
+                        placement="top"
+                    )
                 ], width=3),
+                # Reviews Share Card
                 dbc.Col([
                     dbc.Card([
                         dbc.CardBody([
-                            html.H3("Product Attributes", className="text-center mb-3", style={'color': 'white'}),
-                            html.H2(id='product-score', className="text-center mb-2", style={'color': '#9b59b6', 'fontSize': '2.5rem'}),
-                            html.P("Product Performance Score", className="text-center text-light")
+                            html.H3("Reviews Share", className="text-center mb-3", style={'color': 'white'}),
+                            html.H2(id='product-score', className="text-center mb-2", style={'color': '#9b59b6', 'fontSize': '2.5rem', 'cursor': 'pointer'})
                         ])
-                    ], style={**CARD_STYLE, 'backgroundColor': '#3e2d4a'})  # Lighter purple
+                    ], style={**CARD_STYLE, 'backgroundColor': '#3e2d4a'}),  # Lighter purple
+                    dbc.Tooltip(
+                        html.Div([
+                            html.H6("Reviews Share Summary", style={
+                                'color': 'white',
+                                'marginBottom': '15px',
+                                'fontSize': '1.1rem',
+                                'fontWeight': 'bold',
+                                'borderBottom': '2px solid #636e72',
+                                'paddingBottom': '5px'
+                            }),
+                            html.Div([
+                                html.Span("Brand:", style={'color': '#b2bec3'}),
+                                html.Span(id='reviews-brand-name', style={'color': '#9b59b6', 'fontWeight': 'bold'})
+                            ], style={
+                                'color': '#b2bec3',
+                                'marginBottom': '8px',
+                                'fontSize': '0.9rem',
+                                'display': 'flex',
+                                'justifyContent': 'space-between',
+                                'alignItems': 'center'
+                            }),
+                            html.Div([
+                                html.P("Reviews Share represents the brand's share of customer reviews in the category. It's calculated by comparing the brand's review count to the total category reviews. A higher score indicates stronger customer engagement and feedback volume.", 
+                                    style={
+                                        'color': '#b2bec3',
+                                        'fontSize': '0.85rem',
+                                        'marginTop': '15px',
+                                        'paddingTop': '15px',
+                                        'borderTop': '1px solid #636e72',
+                                        'lineHeight': '1.4'
+                                    }
+                                )
+                            ])
+                        ], style={
+                            'backgroundColor': '#1e272e',
+                            'padding': '15px',
+                            'borderRadius': '8px',
+                            'boxShadow': '0 4px 6px rgba(0, 0, 0, 0.2)',
+                            'border': '1px solid #636e72',
+                            'minWidth': '250px'
+                        }),
+                        target="product-score",
+                        placement="top"
+                    )
                 ], width=3),
+                # Average Customer Rating Card
                 dbc.Col([
                     dbc.Card([
                         dbc.CardBody([
-                            html.H3("Average Rating", className="text-center mb-3", style={'color': 'white'}),
-                            html.H2(id='average-rating', className="text-center mb-2", style={'color': '#f1c40f', 'fontSize': '2.5rem'}),
-                            html.P("Customer Satisfaction Score", className="text-center text-light")
+                            html.H3("Avg. Customer Rating", className="text-center mb-3", style={'color': 'white'}),
+                            html.H2(id='average-rating', className="text-center mb-2", style={'color': '#f1c40f', 'fontSize': '2.5rem', 'cursor': 'pointer'})
                         ])
-                    ], style={**CARD_STYLE, 'backgroundColor': '#4a3e2d'})  # Lighter yellow
+                    ], style={**CARD_STYLE, 'backgroundColor': '#4a3e2d'}),  # Lighter yellow
+                    dbc.Tooltip(
+                        html.Div([
+                            html.H6("Customer Rating Summary", style={
+                                'color': 'white',
+                                'marginBottom': '15px',
+                                'fontSize': '1.1rem',
+                                'fontWeight': 'bold',
+                                'borderBottom': '2px solid #636e72',
+                                'paddingBottom': '5px'
+                            }),
+                            html.Div([
+                                html.Span("Brand:", style={'color': '#b2bec3'}),
+                                html.Span(id='rating-brand-name', style={'color': '#f1c40f', 'fontWeight': 'bold'})
+                            ], style={
+                                'color': '#b2bec3',
+                                'marginBottom': '8px',
+                                'fontSize': '0.9rem',
+                                'display': 'flex',
+                                'justifyContent': 'space-between',
+                                'alignItems': 'center'
+                            }),
+                            html.Div([
+                                html.P("Average Customer Rating represents the mean rating given by customers to the brand's products. It's calculated from verified purchase reviews on a scale of 1-5 stars. A higher rating indicates better customer satisfaction and product quality.", 
+                                    style={
+                                        'color': '#b2bec3',
+                                        'fontSize': '0.85rem',
+                                        'marginTop': '15px',
+                                        'paddingTop': '15px',
+                                        'borderTop': '1px solid #636e72',
+                                        'lineHeight': '1.4'
+                                    }
+                                )
+                            ])
+                        ], style={
+                            'backgroundColor': '#1e272e',
+                            'padding': '15px',
+                            'borderRadius': '8px',
+                            'boxShadow': '0 4px 6px rgba(0, 0, 0, 0.2)',
+                            'border': '1px solid #636e72',
+                            'minWidth': '250px'
+                        }),
+                        target="average-rating",
+                        placement="top"
+                    )
                 ], width=3)
             ], className="mb-4"),
             
@@ -604,7 +736,7 @@ app.layout = dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Key Metrics", style=CARD_HEADER_STYLE),
+                        dbc.CardHeader("Reviews At A Glance", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
                             # Add counters row
                             dbc.Row([
@@ -654,42 +786,66 @@ app.layout = dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Sentiment Analysis", style=CARD_HEADER_STYLE),
+                        dbc.CardHeader("LLM Extracted Sentiment Analysis", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
+                            dcc.Markdown("Key words extracted from consumer reviews using Databricks [_ai_analyze_sentiment_](https://docs.databricks.com/aws/en/sql/language-manual/functions/ai_analyze_sentiment) function.", style={'color': 'white'}),
                             dcc.Graph(id='sentiment-treemap', style={'height': '600px'})
                         ])
                     ], style=CARD_STYLE)
                 ], width=12)
             ], className="mb-4")
-        ], label="Brand Health", tab_id="tab-brand-health"),
+        ], label="Overall", tab_id="tab-brand-health"),
         
         # Product Attribute Tab
         dbc.Tab([
             dbc.Row([
+                # Monthly Orders Chart (now first)
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader([
+                            html.Div([
+                                html.Span("Monthly Orders & Returns", style={'flex': '1'}),
+                                html.Span(id='orders-range-display', style={'color': '#b2bec3', 'fontSize': '0.9rem'})
+                            ], style={'display': 'flex', 'alignItems': 'center'})
+                        ], style=CARD_HEADER_STYLE),
+                        dbc.CardBody([
+                            dcc.Graph(
+                                id='monthly-orders-chart',
+                                style={'height': '400px'},
+                                config={'displayModeBar': True}
+                            )
+                        ])
+                    ], style=CARD_STYLE)
+                ], width=6),
+                # Monthly Reviews Chart (now second)
                 dbc.Col([
                     dbc.Card([
                         dbc.CardHeader([
                             html.Div([
                                 html.Span("Monthly Review Trends", style={'flex': '1'}),
-                                dbc.Button(
-                                    "Analyze with AI Agent",
-                                    id="open-ai-modal",
-                                    color="primary",
-                                    className="ms-auto",
-                                    style={'backgroundColor': '#3498db', 'borderColor': '#3498db'}
-                                )
+                                html.Span(id='selected-range-display', style={'color': '#b2bec3', 'fontSize': '0.9rem'})
                             ], style={'display': 'flex', 'alignItems': 'center'})
                         ], style=CARD_HEADER_STYLE),
                         dbc.CardBody([
-                            dcc.Graph(id='monthly-reviews-chart', style={'height': '400px'})
+                            dcc.Graph(
+                                id='monthly-reviews-chart',
+                                style={'height': '400px'},
+                                config={'displayModeBar': True}
+                            )
                         ])
                     ], style=CARD_STYLE)
-                ], width=12)
+                ], width=6)
             ], className="mb-4"),
             dbc.Row([
+                # Brand Review Word Clouds
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader(id="brand-review-header", style=CARD_HEADER_STYLE),
+                        dbc.CardHeader([
+                            html.Div([
+                                html.Span(id="brand-review-header", style={'flex': '1'}),
+                                html.Span(id='wordcloud-range-display', style={'color': '#b2bec3', 'fontSize': '0.9rem'})
+                            ], style={'display': 'flex', 'alignItems': 'center'})
+                        ], style=CARD_HEADER_STYLE),
                         dbc.CardBody([
                             dbc.Row([
                                 dbc.Col([
@@ -705,7 +861,7 @@ app.layout = dbc.Container([
                     ], style=CARD_STYLE)
                 ], width=12)
             ], className="mb-4")
-        ], label="Product Attribute", tab_id="tab-product"),
+        ], label="Details", tab_id="tab-product"),
         
         # Competitive Positioning Tab
         dbc.Tab([
@@ -753,7 +909,7 @@ app.layout = dbc.Container([
                     ], style=CARD_STYLE)
                 ], width=12)
             ], className="mb-4")
-        ], label="Competitive Positioning", tab_id="tab-competitive")
+        ], label="Competitive", tab_id="tab-competitive")
     ], id="tabs", active_tab="tab-brand-health", className="mb-4"),
     
 ], fluid=True, style={'backgroundColor': '#2d3436', 'minHeight': '100vh', 'padding': '20px'})  # Lighter background
@@ -765,10 +921,12 @@ app.layout = dbc.Container([
     Input('category-filter', 'value')
 )
 def update_brand_options(selected_category):
+    logger.info(f"update_brand_options triggered with category: {selected_category}")
     filtered_data = data[data['category'] == selected_category]
     brands = sorted(filtered_data['brand'].unique())
     options = [{'label': brd, 'value': brd} for brd in brands]
     value = brands[0] if brands else None
+    logger.info(f"Returning {len(options)} brand options")
     return options, value
 
 
@@ -776,6 +934,7 @@ def update_brand_options(selected_category):
 @app.callback(
     Output('sentiment-treemap', 'figure'),
     Output('monthly-reviews-chart', 'figure'),
+    Output('monthly-orders-chart', 'figure'),
     Output('brand-health-score', 'children'),
     Output('competitive-score', 'children'),
     Output('product-score', 'children'),
@@ -790,11 +949,25 @@ def update_brand_options(selected_category):
     Output('positive-reviews-counter', 'children'),
     Output('neutral-reviews-counter', 'children'),
     Output('negative-reviews-counter', 'children'),
+    Output('selected-range-display', 'children'),
+    Output('wordcloud-range-display', 'children'),
+    Output('sales-brand-name', 'children'),
+    Output('units-brand-name', 'children'),
+    Output('reviews-brand-name', 'children'),
+    Output('rating-brand-name', 'children'),
     Input('page-load-trigger', 'data'),
     Input('category-filter', 'value'),
-    Input('brand-filter', 'value')
+    Input('brand-filter', 'value'),
+    Input('retailer-dummy', 'value'),
+    Input('date-range-slider', 'value'),
+    prevent_initial_call=True
 )
-def update_visuals(n_clicks, category, brand):
+def update_visuals(n_clicks, category, brand, retailer, date_range):
+    # Get the trigger that caused the callback
+    ctx = dash.callback_context
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+    logger.info(f"update_visuals triggered by {trigger_id} with category={category}, brand={brand}")
+    
     # Create empty figure template
     def create_empty_fig():
         fig = go.Figure()
@@ -807,10 +980,12 @@ def update_visuals(n_clicks, category, brand):
 
     # Return default values if filters are not set
     if category is None or brand is None:
+        logger.info("No category or brand selected, returning empty figures")
         empty_fig = create_empty_fig()
         return (
             empty_fig,  # sentiment-treemap
             empty_fig,  # monthly-reviews-chart
+            empty_fig,  # monthly-orders-chart
             "0%",  # brand-health-score
             "0%",  # competitive-score
             "0%",  # product-score
@@ -824,19 +999,37 @@ def update_visuals(n_clicks, category, brand):
             "0",  # total-reviews-counter
             "0",  # positive-reviews-counter
             "0",  # neutral-reviews-counter
-            "0"   # negative-reviews-counter
+            "0",  # negative-reviews-counter
+            "",  # selected-range-display
+            "",  # wordcloud-range-display
+            "",  # sales-brand-name
+            "",  # units-brand-name
+            "",  # reviews-brand-name
+            ""   # rating-brand-name
         )
 
     try:
+        # Convert timestamp to datetime
+        start_date = pd.to_datetime(date_range[0], unit='s')
+        end_date = pd.to_datetime(date_range[1], unit='s')
+        logger.info(f"Processing data from {start_date} to {end_date}")
+        
         # Apply filters
-        category_data = data[data['category'] == category]
+        category_data = data[
+            (data['category'] == category) & 
+            (data['date'] >= start_date) &
+            (data['date'] <= end_date)
+        ]
         filtered_data = category_data[category_data['brand'] == brand]
+        logger.info(f"Filtered data shape: {filtered_data.shape}")
         
         if len(filtered_data) == 0:
+            logger.warning("No data found for selected filters")
             empty_fig = create_empty_fig()
             return (
                 empty_fig,  # sentiment-treemap
                 empty_fig,  # monthly-reviews-chart
+                empty_fig,  # monthly-orders-chart
                 "0%",  # brand-health-score
                 "0%",  # competitive-score
                 "0%",  # product-score
@@ -850,8 +1043,100 @@ def update_visuals(n_clicks, category, brand):
                 "0",  # total-reviews-counter
                 "0",  # positive-reviews-counter
                 "0",  # neutral-reviews-counter
-                "0"   # negative-reviews-counter
+                "0",  # negative-reviews-counter
+                "",  # selected-range-display
+                "",  # wordcloud-range-display
+                "",  # sales-brand-name
+                "",  # units-brand-name
+                "",  # reviews-brand-name
+                ""   # rating-brand-name
             )
+
+        # Initialize wordcloud variables
+        brand_positive_wordcloud = None
+        brand_negative_wordcloud = None
+        range_display = "Zoom in on the chart to filter wordclouds by date range"
+        wordcloud_range_display = ""
+
+        # Handle wordcloud data based on relayoutData
+        if trigger_id == 'monthly-reviews-chart':
+            # Check if this is a zoom reset event
+            is_zoom_reset = any(key in relayoutData for key in ['autosize', 'xaxis.autorange', 'yaxis.autorange'])
+            
+            if is_zoom_reset:
+                # Keep the current figure state
+                monthly_reviews_chart = current_figure
+                range_display = "Showing all data"
+                wordcloud_range_display = "Showing all data"
+                # Generate wordclouds for all data
+                brand_positive_wordcloud = generate_wordcloud(
+                    filtered_data[filtered_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
+                    background_color='white'
+                )
+                brand_negative_wordcloud = generate_wordcloud(
+                    filtered_data[filtered_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
+                    background_color='#636e72'
+                )
+            elif 'xaxis.range[0]' in relayoutData and 'xaxis.range[1]' in relayoutData:
+                # Get the zoom range
+                start_date = pd.to_datetime(relayoutData['xaxis.range[0]'])
+                end_date = pd.to_datetime(relayoutData['xaxis.range[1]'])
+                
+                # Filter data for the selected range
+                range_data = filtered_data[
+                    (filtered_data['date'] >= start_date) & 
+                    (filtered_data['date'] <= end_date)
+                ]
+                
+                # Generate wordclouds for the selected range
+                brand_positive_wordcloud = generate_wordcloud(
+                    range_data[range_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
+                    background_color='white'
+                )
+                brand_negative_wordcloud = generate_wordcloud(
+                    range_data[range_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
+                    background_color='#636e72'
+                )
+                
+                # Update the range display
+                range_display = f"Showing data from {start_date.strftime('%B %Y')} to {end_date.strftime('%B %Y')}"
+                wordcloud_range_display = f"Data from {start_date.strftime('%B %Y')} to {end_date.strftime('%B %Y')}"
+            else:
+                # Keep the current figure state
+                monthly_reviews_chart = current_figure
+                range_display = "Showing all data"
+                wordcloud_range_display = "Showing all data"
+                # Generate wordclouds for all data
+                brand_positive_wordcloud = generate_wordcloud(
+                    filtered_data[filtered_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
+                    background_color='white'
+                )
+                brand_negative_wordcloud = generate_wordcloud(
+                    filtered_data[filtered_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
+                    background_color='#636e72'
+                )
+        else:
+            # If no range is selected, show all data
+            brand_positive_wordcloud = generate_wordcloud(
+                filtered_data[filtered_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
+                background_color='white'
+            )
+            brand_negative_wordcloud = generate_wordcloud(
+                filtered_data[filtered_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
+                background_color='#636e72'
+            )
+            range_display = "Zoom in on the chart to filter wordclouds by date range"
+            wordcloud_range_display = "Showing all data"
+
+        # Get reviews from all other brands in the selected category
+        other_brands_data = category_data[category_data['brand'] != brand]
+        
+        # Generate wordclouds for competitor analysis
+        positive_reviews = other_brands_data['positive_feature_list'].dropna().tolist()
+        negative_reviews = other_brands_data['negative_feature_list'].dropna().tolist()
+        
+        positive_wordcloud = generate_wordcloud(positive_reviews, background_color='white')
+        negative_wordcloud = generate_wordcloud(negative_reviews, background_color='#636e72')
 
         # Create sentiment visualization
         sentiment_counts = filtered_data['sentiment'].value_counts()
@@ -888,7 +1173,7 @@ def update_visuals(n_clicks, category, brand):
         sentiment_fig.update_layout(
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(t=25, l=25, r=25, b=25),
+            margin=dict(t=0, l=25, r=25, b=25),
             font=dict(color='white'),
             # title=dict(
             #     text="Sentiment Distribution",
@@ -909,66 +1194,6 @@ def update_visuals(n_clicks, category, brand):
             )
         )
 
-        # Generate word clouds
-        def generate_wordcloud(texts, max_words=100, background_color='#2d3436'):
-            if not texts or all(pd.isna(texts)):
-                return None
-            try:
-                # Clean and convert texts to strings
-                cleaned_texts = []
-                for text in texts:
-                    # Handle NaN/None values
-                    if pd.isna(text):
-                        continue
-                    # Convert to string and clean
-                    try:
-                        text_str = str(text).strip()
-                        if text_str:  # Only add non-empty strings
-                            cleaned_texts.append(text_str)
-                    except:
-                        continue
-                
-                if not cleaned_texts:
-                    return None
-                    
-                text = ' '.join(cleaned_texts)
-                wordcloud = WordCloud(
-                    width=800,
-                    height=400,
-                    background_color=background_color,
-                    colormap='viridis',
-                    max_words=max_words,
-                    contour_width=1,
-                    contour_color='#636e72'
-                ).generate(text)
-                
-                # Convert to base64 for display
-                img = io.BytesIO()
-                wordcloud.to_image().save(img, format='PNG')
-                img.seek(0)
-                return f'data:image/png;base64,{base64.b64encode(img.getvalue()).decode()}'
-            except Exception as e:
-                print(f"Error generating wordcloud: {str(e)}")
-                return None
-
-        # Get reviews from all other brands in the selected category
-        category_data = data[data['category'] == category]  # Filter by selected category
-        other_brands_data = category_data[category_data['brand'] != brand]  # Filter out selected brand
-        
-        # Generate word clouds for competitor analysis
-        positive_reviews = other_brands_data['positive_feature_list'].dropna().tolist()
-        negative_reviews = other_brands_data['negative_feature_list'].dropna().tolist()
-        
-        positive_wordcloud = generate_wordcloud(positive_reviews, background_color='white')  # White background
-        negative_wordcloud = generate_wordcloud(negative_reviews, background_color='#636e72')  # Grey background
-        
-        # Generate word clouds for brand analysis
-        brand_positive_reviews = filtered_data['positive_feature_list'].dropna().tolist()
-        brand_negative_reviews = filtered_data['negative_feature_list'].dropna().tolist()
-        
-        brand_positive_wordcloud = generate_wordcloud(brand_positive_reviews, background_color='white')  # White background
-        brand_negative_wordcloud = generate_wordcloud(brand_negative_reviews, background_color='#636e72')  # Grey background
-        
         # Create market share trend
         # Create Share of Voice chart
         # Group by month and brand to get review counts
@@ -1186,6 +1411,116 @@ def update_visuals(n_clicks, category, brand):
             margin=dict(t=40, l=25, r=25, b=50)
         )
 
+        # Create monthly orders chart
+        # Filter sales data for the selected brand and date range
+        start_date = pd.to_datetime(date_range[0], unit='s')
+        end_date = pd.to_datetime(date_range[1], unit='s')
+        
+        # Convert month column in sales_data to datetime if not already
+        sales_data['month'] = pd.to_datetime(sales_data['month'])
+        
+        brand_sales = sales_data[
+            (sales_data['brand'] == brand) & 
+            (sales_data['month'] >= start_date) &
+            (sales_data['month'] <= end_date)
+        ]
+        
+        # Group by month
+        monthly_sales = brand_sales.groupby(
+            pd.to_datetime(brand_sales['month']).dt.to_period('M')
+        ).agg({
+            'units': 'sum',
+            'returns': 'sum'
+        }).reset_index()
+        
+        # Convert period to string for plotting
+        monthly_sales['date'] = monthly_sales['month'].astype(str)
+        
+        orders_fig = go.Figure()
+        
+        # Add line for orders (using units)
+        orders_fig.add_trace(go.Scatter(
+            x=monthly_sales['date'],
+            y=monthly_sales['units'],
+            mode='lines+markers+text',
+            name='Units Sold',
+            line=dict(
+                color='#FFA500',
+                width=3
+            ),
+            marker=dict(
+                size=8,
+                color='#FFA500',
+                line=dict(width=2, color='#1a1a1a')
+            ),
+            text=[f'{int(x):,}' for x in monthly_sales['units']],
+            textposition='top center',
+            textfont=dict(
+                color='white',
+                size=11
+            ),
+            hovertemplate='<span style="color: #2d3436">Month: %{x}</span><br>' +
+                         '<span style="color: #2d3436">Units Sold: %{y:,.0f}</span><br>' +
+                         '<extra></extra>'
+        ))
+        
+        # Add line for returns
+        orders_fig.add_trace(go.Scatter(
+            x=monthly_sales['date'],
+            y=monthly_sales['returns'],
+            mode='lines+markers+text',
+            name='Returns',
+            line=dict(
+                color='#e74c3c',
+                width=3
+            ),
+            marker=dict(
+                size=8,
+                color='#e74c3c',
+                line=dict(width=2, color='#1a1a1a')
+            ),
+            text=[f'{int(x):,}' for x in monthly_sales['returns']],
+            textposition='bottom center',
+            textfont=dict(
+                color='white',
+                size=11
+            ),
+            hovertemplate='<span style="color: #2d3436">Month: %{x}</span><br>' +
+                         '<span style="color: #2d3436">Returns: %{y:,.0f}</span><br>' +
+                         '<span style="color: #2d3436">Return Rate: %{customdata:.1%}</span><br>' +
+                         '<extra></extra>',
+            customdata=[x/y for x, y in zip(monthly_sales['returns'], monthly_sales['units'])]
+        ))
+        
+        orders_fig.update_layout(
+            xaxis_title='Month',
+            yaxis_title='Number of Units/Returns',
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='white'),
+            xaxis=dict(
+                gridcolor='#404040',
+                tickangle=45,
+                range=[monthly_sales['date'].min(), monthly_sales['date'].max()]
+            ),
+            yaxis=dict(
+                gridcolor='#404040',
+                showgrid=True
+            ),
+            hovermode='x unified',
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                font=dict(size=12, color='white'),
+                bgcolor='rgba(0,0,0,0)',
+                bordercolor='rgba(0,0,0,0)'
+            ),
+            margin=dict(t=40, l=25, r=25, b=50)
+        )
+
         # Calculate metrics
         total_reviews = len(filtered_data)
         positive_reviews_count = len(filtered_data[filtered_data['sentiment_score'] >= 3])
@@ -1205,37 +1540,81 @@ def update_visuals(n_clicks, category, brand):
         else:
             health_color = '#e74c3c'  # Red
             
-        return (
-            sentiment_fig,
-            monthly_reviews_chart,
-            html.Span(f"{brand_health:.1f}%", style={'color': health_color}),  # Updated brand health score with color
-            f"{competitive_position:.1f}%",
-            f"{product_score:.1f}%",
-            f"{filtered_data['rating'].mean():.1f}/5.0",
-            market_share_fig,
-            price_fig,
+        # Calculate sales share metrics with random YoY growth
+        total_category_units = sales_data[
+            (sales_data['month'] >= start_date) & 
+            (sales_data['month'] <= end_date)
+        ]['units'].sum()
+        
+        brand_units = sales_data[
+            (sales_data['brand'] == brand) & 
+            (sales_data['month'] >= start_date) & 
+            (sales_data['month'] <= end_date)
+        ]['units'].sum()
+        
+        sales_share = (brand_units / total_category_units * 100) if total_category_units > 0 else 0
+        sales_rank = sales_data[
+            (sales_data['month'] >= start_date) & 
+            (sales_data['month'] <= end_date)
+        ].groupby('brand')['units'].sum().rank(ascending=False)[brand]
+        sales_yoy_growth = np.random.uniform(-15, 25)  # Random growth between -15% and 25%
+
+        # Calculate units share metrics with random YoY growth
+        total_category_reviews = category_data['review_text'].count()
+        brand_reviews = filtered_data['review_text'].count()
+        units_share = (brand_reviews / total_category_reviews * 100) if total_category_reviews > 0 else 0
+        units_rank = category_data.groupby('brand')['review_text'].count().rank(ascending=False)[brand]
+        units_yoy_growth = np.random.uniform(-10, 20)  # Random growth between -10% and 20%
+
+        # Calculate reviews share metrics with random YoY growth
+        reviews_share = (brand_reviews / total_category_reviews * 100) if total_category_reviews > 0 else 0
+        reviews_rank = category_data.groupby('brand')['review_text'].count().rank(ascending=False)[brand]
+        reviews_yoy_growth = np.random.uniform(-5, 15)  # Random growth between -5% and 15%
+
+        # Calculate rating metrics with random YoY change
+        current_rating = filtered_data['rating'].mean()
+        rating_rank = category_data.groupby('brand')['rating'].mean().rank(ascending=False)[brand]
+        rating_change = np.random.uniform(-0.5, 0.5)  # Random change between -0.5 and 0.5
+
+        return [
+            sentiment_fig.to_dict(),
+            monthly_reviews_chart.to_dict(),
+            orders_fig.to_dict(),
+            html.Div(f"{brand_health:.1f}%", style={'color': health_color}),
+            html.Div(f"{competitive_position:.1f}%"),
+            html.Div(f"{product_score:.1f}%"),
+            html.Div(f"{filtered_data['rating'].mean():.1f}/5.0"),
+            market_share_fig.to_dict(),
+            price_fig.to_dict(),
             positive_wordcloud,
             negative_wordcloud,
             brand_positive_wordcloud,
             brand_negative_wordcloud,
-            f"{total_reviews:,}",
-            f"{positive_reviews_count:,}",
-            f"{neutral_reviews_count:,}",
-            f"{negative_reviews_count:,}"
-        )
+            html.Div(f"{total_reviews:,}"),
+            html.Div(f"{positive_reviews_count:,}"),
+            html.Div(f"{neutral_reviews_count:,}"),
+            html.Div(f"{negative_reviews_count:,}"),
+            html.Div(range_display),
+            html.Div(wordcloud_range_display),
+            brand,  # sales-brand-name
+            brand,  # units-brand-name
+            brand,  # reviews-brand-name
+            brand   # rating-brand-name
+        ]
         
     except Exception as e:
-        print(f"Error in callback: {str(e)}")
+        logger.error(f"Error in update_visuals callback: {str(e)}", exc_info=True)
         empty_fig = create_empty_fig()
-        return (
-            empty_fig,  # sentiment-treemap
-            empty_fig,  # monthly-reviews-chart
+        return [
+            empty_fig.to_dict(),  # sentiment-treemap
+            empty_fig.to_dict(),  # monthly-reviews-chart
+            empty_fig.to_dict(),  # monthly-orders-chart
             "0%",  # brand-health-score
             "0%",  # competitive-score
             "0%",  # product-score
             "0.0",  # average-rating
-            empty_fig,  # market-share-trend
-            empty_fig,  # pricing-comparison
+            empty_fig.to_dict(),  # market-share-trend
+            empty_fig.to_dict(),  # pricing-comparison
             None,  # positive-wordcloud
             None,  # negative-wordcloud
             None,  # brand-positive-wordcloud
@@ -1243,204 +1622,24 @@ def update_visuals(n_clicks, category, brand):
             "0",  # total-reviews-counter
             "0",  # positive-reviews-counter
             "0",  # neutral-reviews-counter
-            "0"   # negative-reviews-counter
-        )
+            "0",  # negative-reviews-counter
+            "",  # selected-range-display
+            "",  # wordcloud-range-display
+            "",  # sales-brand-name
+            "",  # units-brand-name
+            "",  # reviews-brand-name
+            ""   # rating-brand-name
+        ]
 
 # Update the callback to handle all tab switching
 @app.callback(
     Output('tabs', 'active_tab'),
-    Input('open-ai-modal', 'n_clicks'),
+    Input('page-load-trigger', 'data'),
     prevent_initial_call=True
 )
-def switch_to_product_tab(ai_clicks):
-    ctx = dash.callback_context
-    if not ctx.triggered:
-        return dash.no_update
-    
-    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
-    if button_id == 'open-ai-modal':
-        return 'tab-product'
-    return dash.no_update
-
-# Add the callback for the AI Agent modal
-@app.callback(
-    Output("ai-agent-modal", "is_open"),
-    [Input("open-ai-modal", "n_clicks"),
-     Input("close-ai-modal", "n_clicks")],
-    [State("ai-agent-modal", "is_open")],
-)
-def toggle_ai_modal(open_clicks, close_clicks, is_open):
-    if open_clicks or close_clicks:
-        return not is_open
-    return is_open
-
-# Update the callback content for brand-specific tips and next steps
-@app.callback(
-    [Output("ai-analysis-content", "children"),
-     Output("ai-loading-message", "children"),
-     Output("email-analysis", "children"),
-     Output("email-analysis", "style"),
-     Output("email-analysis", "className")],
-    [Input("recommendations-button", "n_clicks"),
-     Input("analyze-button", "n_clicks")],
-    [State('category-filter', 'value'),
-     State('brand-filter', 'value')],
-    prevent_initial_call=True
-)
-def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
-    ctx = dash.callback_context
-    if not ctx.triggered:
-        return [], "", None, {'display': 'none'}, 'email-analysis-container'
-    
-    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
-    
-    try:
-        # Filter data
-        filtered_data = data[(data['category'] == category) & (data['brand'] == brand)]
-        
-        if button_id == "recommendations-button":
-            # Brand-specific quick tips
-            if brand == "Barbie":
-                recommendations_content = html.Div([
-                    html.H6("Quick Tips", style={'color': 'white', 'marginBottom': '15px'}),
-                    html.Ul([
-                        html.Li("Positive customer experience trends indicate strong brand loyalty. Consider expanding the customer engagement program.", 
-                               style={'color': 'white', 'marginBottom': '10px'})
-                    ])
-                ])
-            elif brand == "LEGO":
-                recommendations_content = html.Div([
-                    html.H6("Quick Tips", style={'color': 'white', 'marginBottom': '15px'}),
-                    html.Ul([
-                        html.Li("Increased customer concerns about product quality. Review quality control processes at manufacturing facilities.", 
-                               style={'color': 'white', 'marginBottom': '10px'})
-                    ])
-                ])
-            else:
-                # Default recommendations for other brands
-                recommendations_content = html.Div([
-                    html.H6("Quick Tips", style={'color': 'white', 'marginBottom': '15px'}),
-                    html.Ul([
-                        html.Li("There is an increase in negative sentiment. Review the product and the customer experience.", 
-                               style={'color': 'white', 'marginBottom': '10px'})
-                    ])
-                ])
-            
-            return recommendations_content, "", None, {'display': 'none'}, 'email-analysis-container'
-            
-        elif button_id == "analyze-button":
-            # Get date range from filtered data
-            end_date = filtered_data['date'].max().strftime('%Y-%m-%d')
-            start_date = (filtered_data['date'].max() - pd.DateOffset(months=3)).strftime('%Y-%m-%d')
-            
-            # Construct the message for the endpoint
-            message = {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": f"For Brand: {brand} Category: {category} has the sentiment gone up or down between date:{start_date} and date:{end_date}? What products are driving this change? "
-                    }
-                ]
-            }
-            
-            # Call the endpoint
-            try:
-                messages, request_id = query_endpoint(os.getenv('SERVING_ENDPOINT'), message["messages"], max_tokens=128, return_traces=False)
-                print(f"Debug - Messages received: {messages}")  # Debug log
-                print(f"Debug - Request ID: {request_id}")  # Debug log
-                
-                # Get the content from the final assistant message
-                content = "No analysis available"
-                for msg in reversed(messages):
-                    if msg.get('role') == 'assistant' and msg.get('content'):
-                        content = msg['content']
-                        break
-                
-                print(f"Debug - Content to display: {content}")  # Debug log
-                
-                # Split content into sections based on headers
-                sections = content.split('\n\n')
-                formatted_content = []
-                
-                for section in sections:
-                    if ':' in section:
-                        # Split into header and content
-                        header, content = section.split(':', 1)
-                        header = header.strip()
-                        content = content.strip()
-                        
-                        # Add the header
-                        formatted_content.append(
-                            html.H6(header + ':', style={
-                                'color': 'white',
-                                'marginBottom': '15px',
-                                'marginTop': '20px',
-                                'fontWeight': 'bold'
-                            })
-                        )
-                        
-                        # Check if content starts with numbers or bullets
-                        if any(content.strip().startswith(str(i) + '.') for i in range(1, 10)):
-                            # Handle numbered list
-                            items = []
-                            current_item = None
-                            
-                            for line in content.split('\n'):
-                                line = line.strip()
-                                if line and line[0].isdigit() and '. ' in line:
-                                    if current_item:
-                                        items.append(current_item)
-                                    number, text = line.split('. ', 1)
-                                    current_item = {'text': text, 'subitems': []}
-                                elif line.startswith('-') and current_item:
-                                    current_item['subitems'].append(line.lstrip('-').strip())
-                                elif current_item and line:
-                                    # Append to current item's text if it's a continuation
-                                    current_item['text'] += ' ' + line
-                            
-                            if current_item:
-                                items.append(current_item)
-                            
-                            # Create ordered list with items
-                            formatted_content.append(html.Ol([
-                                html.Li([
-                                    item['text'],
-                                    html.Ul([html.Li(subitem, style={'color': 'white'}) for subitem in item['subitems']])
-                                ] if item['subitems'] else item['text'],
-                                style={'color': 'white', 'marginBottom': '12px', 'lineHeight': '1.5'})
-                                for item in items
-                            ], style={'paddingLeft': '20px'}))
-                            
-                        elif content.strip().startswith('-'):
-                            # Handle bullet points
-                            items = [item.strip().lstrip('-') for item in content.split('\n') if item.strip()]
-                            formatted_content.append(html.Ul([
-                                html.Li(item, style={'color': 'white', 'marginBottom': '12px', 'lineHeight': '1.5'})
-                                for item in items
-                            ], style={'paddingLeft': '20px'}))
-                        else:
-                            # Regular paragraph
-                            formatted_content.append(
-                                html.P(content, style={'color': 'white', 'marginBottom': '15px', 'lineHeight': '1.5'})
-                            )
-                    else:
-                        # Regular paragraph without header
-                        formatted_content.append(
-                            html.P(section, style={'color': 'white', 'marginBottom': '15px', 'lineHeight': '1.5'})
-                        )
-                
-                analysis_content = html.Div(formatted_content)
-            except Exception as e:
-                print(f"Error in analysis: {str(e)}")  # Debug logging
-                analysis_content = html.Div([
-                    html.H6("Error:", style={'color': 'white', 'marginBottom': '15px'}),
-                    html.P(f"Failed to get analysis: {str(e)}", style={'color': 'white'})
-                ])
-            
-            return analysis_content, "", None, {'display': 'none'}, 'email-analysis-container'
-            
-    except Exception as e:
-        return html.P(f"Error: {str(e)}", style={'color': 'white'}), "", None, {'display': 'none'}, 'email-analysis-container'
+def switch_to_product_tab(n_clicks):
+    logger.info("switch_to_product_tab triggered")
+    return 'tab-market'
 
 # Update the tooltip callback to show multiple top features
 @app.callback(
@@ -1452,9 +1651,11 @@ def handle_ai_actions(recommendations_clicks, analyze_clicks, category, brand):
      Input('brand-filter', 'value')]
 )
 def update_review_summaries(category, brand):
+    logger.info(f"update_review_summaries triggered with category={category}, brand={brand}")
     try:
         # Filter data for the selected brand and category
         filtered_data = data[(data['category'] == category) & (data['brand'] == brand)]
+        logger.info(f"Filtered data shape for tooltips: {filtered_data.shape}")
         
         # Calculate metrics
         total_reviews = len(filtered_data)
@@ -1505,10 +1706,6 @@ def update_review_summaries(category, brand):
             html.Div([
                 html.Span("Average Rating:", style={'color': '#b2bec3'}),
                 html.Span(f"{filtered_data['rating'].mean():.1f}/5.0", style={'color': '#3498db', 'fontWeight': 'bold'})
-            ], style=tooltip_text_style),
-            html.Div([
-                html.Span("This Month:", style={'color': '#b2bec3'}),
-                html.Span(f"{len(filtered_data[filtered_data['date'] >= pd.Timestamp.now() - pd.DateOffset(months=1)]):,}", style={'color': '#3498db', 'fontWeight': 'bold'})
             ], style=tooltip_text_style)
         ], style=tooltip_container_style)
         
@@ -1572,6 +1769,7 @@ def update_review_summaries(category, brand):
         return total_summary, positive_summary, neutral_summary, negative_summary
         
     except Exception as e:
+        logger.error(f"Error in update_review_summaries callback: {str(e)}", exc_info=True)
         error_msg = html.P(f"Error generating summary: {str(e)}", style={'color': 'white'})
         return error_msg, error_msg, error_msg, error_msg
 
@@ -1581,6 +1779,7 @@ def update_review_summaries(category, brand):
     Input('brand-filter', 'value')
 )
 def update_brand_review_header(selected_brand):
+    logger.info(f"update_brand_review_header triggered with brand={selected_brand}")
     if selected_brand:
         return f"What people are saying about {selected_brand} products..."
     return "What people are saying about selected brand..."
@@ -1591,15 +1790,145 @@ def update_brand_review_header(selected_brand):
     Input('category-filter', 'value')
 )
 def update_category_review_header(selected_category):
+    logger.info(f"update_category_review_header triggered with category={selected_category}")
     if selected_category:
         return f"What people are saying about other products in the {selected_category} category..."
     return "What people are saying about other products in the selected category..."
+
+# Update the cross-filtering callback to handle all interactions
+@app.callback(
+    [Output('brand-positive-wordcloud', 'src', allow_duplicate=True),
+     Output('brand-negative-wordcloud', 'src', allow_duplicate=True),
+     Output('wordcloud-range-display', 'children', allow_duplicate=True),
+     Output('selected-range-display', 'children', allow_duplicate=True),
+     Output('monthly-reviews-chart', 'figure', allow_duplicate=True),
+     Output('monthly-orders-chart', 'figure', allow_duplicate=True),
+     Output('market-share-trend', 'figure', allow_duplicate=True)],
+    [Input('monthly-orders-chart', 'relayoutData'),
+     Input('monthly-reviews-chart', 'relayoutData'),
+     Input('market-share-trend', 'relayoutData')],
+    [State('category-filter', 'value'),
+     State('brand-filter', 'value'),
+     State('monthly-reviews-chart', 'figure'),
+     State('monthly-orders-chart', 'figure'),
+     State('market-share-trend', 'figure')],
+    prevent_initial_call=True
+)
+def update_details_tab_figures(orders_relayout, reviews_relayout, market_share_relayout, category, brand, reviews_figure, orders_figure, market_share_figure):
+    # Get the trigger that caused the callback
+    ctx = dash.callback_context
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+    logger.info(f"update_details_tab_figures triggered by {trigger_id} with category={category}, brand={brand}")
+    
+    if not category or not brand:
+        logger.info("No category or brand selected, returning current figures")
+        return None, None, "", "", reviews_figure, orders_figure, market_share_figure
+        
+    try:
+        filtered_data = data[(data['category'] == category) & (data['brand'] == brand)]
+        logger.info(f"Filtered data shape: {filtered_data.shape}")
+        
+        # Determine which chart triggered the callback and get the date range
+        relayout_data = None
+        if trigger_id == 'monthly-orders-chart':
+            relayout_data = orders_relayout
+        elif trigger_id == 'monthly-reviews-chart':
+            relayout_data = reviews_relayout
+        else:
+            relayout_data = market_share_relayout
+        
+        if relayout_data and 'xaxis.range[0]' in relayout_data and 'xaxis.range[1]' in relayout_data:
+            # Get the zoom range
+            start_date = pd.to_datetime(relayout_data['xaxis.range[0]'])
+            end_date = pd.to_datetime(relayout_data['xaxis.range[1]'])
+            
+            # Filter data for the selected range
+            range_data = filtered_data[
+                (filtered_data['date'] >= start_date) & 
+                (filtered_data['date'] <= end_date)
+            ]
+            
+            # Generate wordclouds for the selected range
+            # Positive wordcloud: sentiment_score > 3
+            positive_data = range_data[range_data['sentiment_score'] > 3]
+            brand_positive_wordcloud = generate_wordcloud(
+                positive_data['positive_feature_list'].dropna().tolist(),
+                background_color='white'
+            )
+            
+            # Negative wordcloud: sentiment_score < 3
+            negative_data = range_data[range_data['sentiment_score'] < 3]
+            brand_negative_wordcloud = generate_wordcloud(
+                negative_data['negative_feature_list'].dropna().tolist(),
+                background_color='#636e72'
+            )
+            
+            # Update the range displays
+            range_display = f"Showing data from {start_date.strftime('%B %Y')} to {end_date.strftime('%B %Y')}"
+            wordcloud_range_display = range_display
+            
+            # Update all charts to show the same range
+            for figure in [reviews_figure, orders_figure, market_share_figure]:
+                if figure and 'layout' in figure:
+                    if 'xaxis' not in figure['layout']:
+                        figure['layout']['xaxis'] = {}
+                    figure['layout']['xaxis'].update({
+                        'range': [start_date, end_date],
+                        'autorange': False
+                    })
+            
+        elif relayout_data and any(key in relayout_data for key in ['autosize', 'xaxis.autorange', 'yaxis.autorange']):
+            # Reset zoom on all charts
+            for figure in [reviews_figure, orders_figure, market_share_figure]:
+                if figure and 'layout' in figure:
+                    if 'xaxis' not in figure['layout']:
+                        figure['layout']['xaxis'] = {}
+                    figure['layout']['xaxis'].update({
+                        'autorange': True
+                    })
+            
+            # Show all data in wordclouds
+            # Positive wordcloud: sentiment_score > 3
+            positive_data = filtered_data[filtered_data['sentiment_score'] > 3]
+            brand_positive_wordcloud = generate_wordcloud(
+                positive_data['positive_feature_list'].dropna().tolist(),
+                background_color='white'
+            )
+            
+            # Negative wordcloud: sentiment_score < 3
+            negative_data = filtered_data[filtered_data['sentiment_score'] < 3]
+            brand_negative_wordcloud = generate_wordcloud(
+                negative_data['negative_feature_list'].dropna().tolist(),
+                background_color='#636e72'
+            )
+            range_display = "Showing all data"
+            wordcloud_range_display = range_display
+        else:
+            # Keep the current state of the figures
+            brand_positive_wordcloud = generate_wordcloud(
+                filtered_data[filtered_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
+                background_color='white'
+            )
+            brand_negative_wordcloud = generate_wordcloud(
+                filtered_data[filtered_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
+                background_color='#636e72'
+            )
+            range_display = "Showing all data"
+            wordcloud_range_display = range_display
+            
+        return brand_positive_wordcloud, brand_negative_wordcloud, wordcloud_range_display, range_display, reviews_figure, orders_figure, market_share_figure
+        
+    except Exception as e:
+        logger.error(f"Error in update_details_tab_figures callback: {str(e)}", exc_info=True)
+        return None, None, "Error updating figures", "Error updating figures", reviews_figure, orders_figure, market_share_figure
 
 if __name__ == "__main__":
     # Check if running in Databricks
     if 'dbutils' in globals():
         # For Databricks environment
+        logger.info("Starting app in Databricks environment")
         app.run(host='0.0.0.0', port=8050, debug=True, use_reloader=False)
     else:
         # For local environment
+        logger.info("Starting app in local environment")
         app.run(debug=True)

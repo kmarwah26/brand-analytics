@@ -100,6 +100,7 @@ try:
     
     # Apply sentiment mapping and fill any missing values based on sentiment_score
     data['sentiment'] = data['sentiment'].map(sentiment_mapping)
+    #data['sentiment'] = data['sentiment'].str.capitalize()
  
 
     data.loc[data['sentiment'].isna(), 'sentiment'] = data.loc[data['sentiment'].isna(), 'sentiment_score'].apply(
@@ -786,6 +787,7 @@ app.layout = dbc.Container([
                     dbc.Card([
                         dbc.CardHeader("LLM Extracted Sentiment Analysis", style=CARD_HEADER_STYLE),
                         dbc.CardBody([
+                            dcc.Markdown("Key words extracted from consumer reviews using Databricks [_ai_analyze_sentiment_](https://docs.databricks.com/aws/en/sql/language-manual/functions/ai_analyze_sentiment) function.", style={'color': 'white'}),
                             dcc.Graph(id='sentiment-treemap', style={'height': '600px'})
                         ])
                     ], style=CARD_STYLE)
@@ -1170,7 +1172,7 @@ def update_visuals(n_clicks, category, brand, retailer, date_range):
         sentiment_fig.update_layout(
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(t=25, l=25, r=25, b=25),
+            margin=dict(t=0, l=25, r=25, b=25),
             font=dict(color='white'),
             # title=dict(
             #     text="Sentiment Distribution",

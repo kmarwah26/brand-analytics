@@ -50,27 +50,43 @@ def sqlQuery(query: str) -> pd.DataFrame:
         raise
 
 try:
-    #data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
-    #sales_data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.monthly_brand_metrics WHERE category = 'Toys & Games'")
+    logger.info("Attempting to load data from SQL...")
+    data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
+    logger.info(f"Successfully loaded brand insights data. Shape: {data.shape}, Columns: {data.columns.tolist()}")
+    
+    sales_data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.monthly_brand_metrics WHERE category = 'Toys & Games'")
 
     # Load data from CSV
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    data_path = os.path.join(current_dir, 'app_data', 'brand_insights_data.csv')
-    data = pd.read_csv(data_path)
-    print(f"Data shape: {data.shape}")
-    print(f"Data columns: {data.columns}")
+    # current_dir = os.path.dirname(os.path.abspath(__file__))
+    # data_path = os.path.join(current_dir, 'app_data', 'brand_insights_data.csv')
+    # data = pd.read_csv(data_path)
+    # print(f"Data shape: {data.shape}")
+    # print(f"Data columns: {data.columns}")
 
-    # Load sales from CSV
-    sales_path = os.path.join(current_dir, 'app_data', 'monthly_sales_toys.csv')
-    sales_data = pd.read_csv(sales_path)
-    print(f"Data shape: {sales_data.shape}")
-    print(f"Data columns: {sales_data.columns}")
+    # # Load sales from CSV
+    # sales_path = os.path.join(current_dir, 'app_data', 'monthly_sales_toys.csv')
+    # sales_data = pd.read_csv(sales_path)
+    # print(f"Data shape: {sales_data.shape}")
+    # print(f"Data columns: {sales_data.columns}")
 
+    logger.info(f"Successfully loaded sales data. Shape: {sales_data.shape}, Columns: {sales_data.columns.tolist()}")
     
     # Convert the date column to a datetime object
+    logger.info("Converting date columns to datetime...")
     data['date'] = pd.to_datetime(data['date'], errors='coerce')
+    sales_data['month'] = pd.to_datetime(sales_data['month'], errors='coerce')
+    logger.info(f"Date range in data: {data['date'].min()} to {data['date'].max()}")
+    logger.info(f"Date range in sales_data: {sales_data['month'].min()} to {sales_data['month'].max()}")
+    
+    # Log any null values in key columns
+    logger.info("Checking for null values in key columns:")
+    logger.info(f"Null dates in data: {data['date'].isnull().sum()}")
+    logger.info(f"Null dates in sales_data: {sales_data['month'].isnull().sum()}")
+    logger.info(f"Null brands in data: {data['brand'].isnull().sum()}")
+    logger.info(f"Null brands in sales_data: {sales_data['brand'].isnull().sum()}")
     
     # Clean up sentiment column
+    logger.info("Standardizing sentiment values...")
     # Standardize sentiment values
     sentiment_mapping = {
         'positive': 'Positive',
@@ -251,8 +267,9 @@ try:
         raise ValueError(f"Missing required columns: {missing_columns}")
         
 except Exception as e:
-    print(f"An error occurred loading data: {str(e)}")
+    logger.error(f"Error loading data from SQL: {str(e)}", exc_info=True)
     data = pd.DataFrame()
+    sales_data = pd.DataFrame()
 
 # Generate synthetic orders data
 def generate_synthetic_orders(data):
@@ -968,6 +985,10 @@ def update_visuals(n_clicks, category, brand, retailer, date_range):
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
     logger.info(f"update_visuals triggered by {trigger_id} with category={category}, brand={brand}")
     
+    # Log data state at start of callback
+    logger.info(f"Data shape at start of callback: {data.shape}")
+    logger.info(f"Sales data shape at start of callback: {sales_data.shape}")
+    
     # Create empty figure template
     def create_empty_fig():
         fig = go.Figure()
@@ -980,7 +1001,7 @@ def update_visuals(n_clicks, category, brand, retailer, date_range):
 
     # Return default values if filters are not set
     if category is None or brand is None:
-        logger.info("No category or brand selected, returning empty figures")
+        logger.warning("No category or brand selected, returning empty figures")
         empty_fig = create_empty_fig()
         return (
             empty_fig,  # sentiment-treemap
@@ -1020,11 +1041,13 @@ def update_visuals(n_clicks, category, brand, retailer, date_range):
             (data['date'] >= start_date) &
             (data['date'] <= end_date)
         ]
+        logger.info(f"Category data shape after date filter: {category_data.shape}")
+        
         filtered_data = category_data[category_data['brand'] == brand]
-        logger.info(f"Filtered data shape: {filtered_data.shape}")
+        logger.info(f"Filtered data shape after brand filter: {filtered_data.shape}")
         
         if len(filtered_data) == 0:
-            logger.warning("No data found for selected filters")
+            logger.warning(f"No data found for category={category} and brand={brand} in date range {start_date} to {end_date}")
             empty_fig = create_empty_fig()
             return (
                 empty_fig,  # sentiment-treemap
@@ -1051,6 +1074,36 @@ def update_visuals(n_clicks, category, brand, retailer, date_range):
                 "",  # reviews-brand-name
                 ""   # rating-brand-name
             )
+
+        # Log data for monthly reviews chart
+        logger.info("Preparing monthly reviews chart data...")
+        monthly_sentiment = filtered_data.groupby([
+            pd.to_datetime(filtered_data['date']).dt.to_period('M'),
+            pd.cut(filtered_data['sentiment_score'], 
+                  bins=[0, 2.9, 3.1, 5], 
+                  labels=['Negative (<3)', 'Neutral (=3)', 'Positive (>3)'])
+        ]).size().unstack(fill_value=0)
+        logger.info(f"Monthly sentiment data shape: {monthly_sentiment.shape}")
+        logger.info(f"Monthly sentiment data:\n{monthly_sentiment}")
+
+        # Log data for monthly orders chart
+        logger.info("Preparing monthly orders chart data...")
+        brand_sales = sales_data[
+            (sales_data['brand'] == brand) & 
+            (sales_data['month'] >= start_date) &
+            (sales_data['month'] <= end_date)
+        ]
+        logger.info(f"Brand sales data shape: {brand_sales.shape}")
+        logger.info(f"Brand sales data:\n{brand_sales}")
+
+        # Log data for market share trend
+        logger.info("Preparing market share trend data...")
+        monthly_brand_counts = category_data.groupby([
+            pd.to_datetime(category_data['date']).dt.to_period('M'),
+            'brand'
+        ]).size().reset_index(name='review_count')
+        logger.info(f"Market share data shape: {monthly_brand_counts.shape}")
+        logger.info(f"Market share data:\n{monthly_brand_counts}")
 
         # Initialize wordcloud variables
         brand_positive_wordcloud = None
@@ -1311,13 +1364,6 @@ def update_visuals(n_clicks, category, brand, retailer, date_range):
         )
 
         # Create monthly sentiment line chart
-        monthly_sentiment = filtered_data.groupby([
-            pd.to_datetime(filtered_data['date']).dt.to_period('M'),
-            pd.cut(filtered_data['sentiment_score'], 
-                  bins=[0, 2.9, 3.1, 5], 
-                  labels=['Negative (<3)', 'Neutral (=3)', 'Positive (>3)'])
-        ]).size().unstack(fill_value=0)
-        
         monthly_sentiment.index = monthly_sentiment.index.astype(str)
         
         # Calculate mean and standard deviation for each sentiment category

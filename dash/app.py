@@ -50,19 +50,19 @@ def sqlQuery(query: str) -> pd.DataFrame:
         raise
 
 try:
-    data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
-    sales_data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.monthly_brand_metrics WHERE category = 'Toys & Games'")
+    #data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
+    #sales_data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.monthly_brand_metrics WHERE category = 'Toys & Games'")
 
     # Load data from CSV
     current_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(current_dir, 'app_data', 'brand_insights_data.csv')
-    #data = pd.read_csv(data_path)
+    data = pd.read_csv(data_path)
     print(f"Data shape: {data.shape}")
     print(f"Data columns: {data.columns}")
 
     # Load sales from CSV
     sales_path = os.path.join(current_dir, 'app_data', 'monthly_sales_toys.csv')
-    #sales_data = pd.read_csv(sales_path)
+    sales_data = pd.read_csv(sales_path)
     print(f"Data shape: {sales_data.shape}")
     print(f"Data columns: {sales_data.columns}")
 
@@ -1796,131 +1796,131 @@ def update_category_review_header(selected_category):
     return "What people are saying about other products in the selected category..."
 
 # Update the cross-filtering callback to handle all interactions
-@app.callback(
-    [Output('brand-positive-wordcloud', 'src', allow_duplicate=True),
-     Output('brand-negative-wordcloud', 'src', allow_duplicate=True),
-     Output('wordcloud-range-display', 'children', allow_duplicate=True),
-     Output('selected-range-display', 'children', allow_duplicate=True),
-     Output('monthly-reviews-chart', 'figure', allow_duplicate=True),
-     Output('monthly-orders-chart', 'figure', allow_duplicate=True),
-     Output('market-share-trend', 'figure', allow_duplicate=True)],
-    [Input('monthly-orders-chart', 'relayoutData'),
-     Input('monthly-reviews-chart', 'relayoutData'),
-     Input('market-share-trend', 'relayoutData')],
-    [State('category-filter', 'value'),
-     State('brand-filter', 'value'),
-     State('monthly-reviews-chart', 'figure'),
-     State('monthly-orders-chart', 'figure'),
-     State('market-share-trend', 'figure')],
-    prevent_initial_call=True
-)
-def update_details_tab_figures(orders_relayout, reviews_relayout, market_share_relayout, category, brand, reviews_figure, orders_figure, market_share_figure):
-    # Get the trigger that caused the callback
-    ctx = dash.callback_context
-    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
-    logger.info(f"update_details_tab_figures triggered by {trigger_id} with category={category}, brand={brand}")
+# @app.callback(
+#     [Output('brand-positive-wordcloud', 'src', allow_duplicate=True),
+#      Output('brand-negative-wordcloud', 'src', allow_duplicate=True),
+#      Output('wordcloud-range-display', 'children', allow_duplicate=True),
+#      Output('selected-range-display', 'children', allow_duplicate=True),
+#      Output('monthly-reviews-chart', 'figure', allow_duplicate=True),
+#      Output('monthly-orders-chart', 'figure', allow_duplicate=True),
+#      Output('market-share-trend', 'figure', allow_duplicate=True)],
+#     [Input('monthly-orders-chart', 'relayoutData'),
+#      Input('monthly-reviews-chart', 'relayoutData'),
+#      Input('market-share-trend', 'relayoutData')],
+#     [State('category-filter', 'value'),
+#      State('brand-filter', 'value'),
+#      State('monthly-reviews-chart', 'figure'),
+#      State('monthly-orders-chart', 'figure'),
+#      State('market-share-trend', 'figure')],
+#     prevent_initial_call=True
+# )
+# def update_details_tab_figures(orders_relayout, reviews_relayout, market_share_relayout, category, brand, reviews_figure, orders_figure, market_share_figure):
+#     # Get the trigger that caused the callback
+#     ctx = dash.callback_context
+#     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+#     logger.info(f"update_details_tab_figures triggered by {trigger_id} with category={category}, brand={brand}")
     
-    if not category or not brand:
-        logger.info("No category or brand selected, returning current figures")
-        return None, None, "", "", reviews_figure, orders_figure, market_share_figure
+#     if not category or not brand:
+#         logger.info("No category or brand selected, returning current figures")
+#         return None, None, "", "", reviews_figure, orders_figure, market_share_figure
         
-    try:
-        filtered_data = data[(data['category'] == category) & (data['brand'] == brand)]
-        logger.info(f"Filtered data shape: {filtered_data.shape}")
+#     try:
+#         filtered_data = data[(data['category'] == category) & (data['brand'] == brand)]
+#         logger.info(f"Filtered data shape: {filtered_data.shape}")
         
-        # Determine which chart triggered the callback and get the date range
-        relayout_data = None
-        if trigger_id == 'monthly-orders-chart':
-            relayout_data = orders_relayout
-        elif trigger_id == 'monthly-reviews-chart':
-            relayout_data = reviews_relayout
-        else:
-            relayout_data = market_share_relayout
+#         # Determine which chart triggered the callback and get the date range
+#         relayout_data = None
+#         if trigger_id == 'monthly-orders-chart':
+#             relayout_data = orders_relayout
+#         elif trigger_id == 'monthly-reviews-chart':
+#             relayout_data = reviews_relayout
+#         else:
+#             relayout_data = market_share_relayout
         
-        if relayout_data and 'xaxis.range[0]' in relayout_data and 'xaxis.range[1]' in relayout_data:
-            # Get the zoom range
-            start_date = pd.to_datetime(relayout_data['xaxis.range[0]'])
-            end_date = pd.to_datetime(relayout_data['xaxis.range[1]'])
+#         if relayout_data and 'xaxis.range[0]' in relayout_data and 'xaxis.range[1]' in relayout_data:
+#             # Get the zoom range
+#             start_date = pd.to_datetime(relayout_data['xaxis.range[0]'])
+#             end_date = pd.to_datetime(relayout_data['xaxis.range[1]'])
             
-            # Filter data for the selected range
-            range_data = filtered_data[
-                (filtered_data['date'] >= start_date) & 
-                (filtered_data['date'] <= end_date)
-            ]
+#             # Filter data for the selected range
+#             range_data = filtered_data[
+#                 (filtered_data['date'] >= start_date) & 
+#                 (filtered_data['date'] <= end_date)
+#             ]
             
-            # Generate wordclouds for the selected range
-            # Positive wordcloud: sentiment_score > 3
-            positive_data = range_data[range_data['sentiment_score'] > 3]
-            brand_positive_wordcloud = generate_wordcloud(
-                positive_data['positive_feature_list'].dropna().tolist(),
-                background_color='white'
-            )
+#             # Generate wordclouds for the selected range
+#             # Positive wordcloud: sentiment_score > 3
+#             positive_data = range_data[range_data['sentiment_score'] > 3]
+#             brand_positive_wordcloud = generate_wordcloud(
+#                 positive_data['positive_feature_list'].dropna().tolist(),
+#                 background_color='white'
+#             )
             
-            # Negative wordcloud: sentiment_score < 3
-            negative_data = range_data[range_data['sentiment_score'] < 3]
-            brand_negative_wordcloud = generate_wordcloud(
-                negative_data['negative_feature_list'].dropna().tolist(),
-                background_color='#636e72'
-            )
+#             # Negative wordcloud: sentiment_score < 3
+#             negative_data = range_data[range_data['sentiment_score'] < 3]
+#             brand_negative_wordcloud = generate_wordcloud(
+#                 negative_data['negative_feature_list'].dropna().tolist(),
+#                 background_color='#636e72'
+#             )
             
-            # Update the range displays
-            range_display = f"Showing data from {start_date.strftime('%B %Y')} to {end_date.strftime('%B %Y')}"
-            wordcloud_range_display = range_display
+#             # Update the range displays
+#             range_display = f"Showing data from {start_date.strftime('%B %Y')} to {end_date.strftime('%B %Y')}"
+#             wordcloud_range_display = range_display
             
-            # Update all charts to show the same range
-            for figure in [reviews_figure, orders_figure, market_share_figure]:
-                if figure and 'layout' in figure:
-                    if 'xaxis' not in figure['layout']:
-                        figure['layout']['xaxis'] = {}
-                    figure['layout']['xaxis'].update({
-                        'range': [start_date, end_date],
-                        'autorange': False
-                    })
+#             # Update all charts to show the same range
+#             for figure in [reviews_figure, orders_figure, market_share_figure]:
+#                 if figure and 'layout' in figure:
+#                     if 'xaxis' not in figure['layout']:
+#                         figure['layout']['xaxis'] = {}
+#                     figure['layout']['xaxis'].update({
+#                         'range': [start_date, end_date],
+#                         'autorange': False
+#                     })
             
-        elif relayout_data and any(key in relayout_data for key in ['autosize', 'xaxis.autorange', 'yaxis.autorange']):
-            # Reset zoom on all charts
-            for figure in [reviews_figure, orders_figure, market_share_figure]:
-                if figure and 'layout' in figure:
-                    if 'xaxis' not in figure['layout']:
-                        figure['layout']['xaxis'] = {}
-                    figure['layout']['xaxis'].update({
-                        'autorange': True
-                    })
+#         elif relayout_data and any(key in relayout_data for key in ['autosize', 'xaxis.autorange', 'yaxis.autorange']):
+#             # Reset zoom on all charts
+#             for figure in [reviews_figure, orders_figure, market_share_figure]:
+#                 if figure and 'layout' in figure:
+#                     if 'xaxis' not in figure['layout']:
+#                         figure['layout']['xaxis'] = {}
+#                     figure['layout']['xaxis'].update({
+#                         'autorange': True
+#                     })
             
-            # Show all data in wordclouds
-            # Positive wordcloud: sentiment_score > 3
-            positive_data = filtered_data[filtered_data['sentiment_score'] > 3]
-            brand_positive_wordcloud = generate_wordcloud(
-                positive_data['positive_feature_list'].dropna().tolist(),
-                background_color='white'
-            )
+#             # Show all data in wordclouds
+#             # Positive wordcloud: sentiment_score > 3
+#             positive_data = filtered_data[filtered_data['sentiment_score'] > 3]
+#             brand_positive_wordcloud = generate_wordcloud(
+#                 positive_data['positive_feature_list'].dropna().tolist(),
+#                 background_color='white'
+#             )
             
-            # Negative wordcloud: sentiment_score < 3
-            negative_data = filtered_data[filtered_data['sentiment_score'] < 3]
-            brand_negative_wordcloud = generate_wordcloud(
-                negative_data['negative_feature_list'].dropna().tolist(),
-                background_color='#636e72'
-            )
-            range_display = "Showing all data"
-            wordcloud_range_display = range_display
-        else:
-            # Keep the current state of the figures
-            brand_positive_wordcloud = generate_wordcloud(
-                filtered_data[filtered_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
-                background_color='white'
-            )
-            brand_negative_wordcloud = generate_wordcloud(
-                filtered_data[filtered_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
-                background_color='#636e72'
-            )
-            range_display = "Showing all data"
-            wordcloud_range_display = range_display
+#             # Negative wordcloud: sentiment_score < 3
+#             negative_data = filtered_data[filtered_data['sentiment_score'] < 3]
+#             brand_negative_wordcloud = generate_wordcloud(
+#                 negative_data['negative_feature_list'].dropna().tolist(),
+#                 background_color='#636e72'
+#             )
+#             range_display = "Showing all data"
+#             wordcloud_range_display = range_display
+#         else:
+#             # Keep the current state of the figures
+#             brand_positive_wordcloud = generate_wordcloud(
+#                 filtered_data[filtered_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
+#                 background_color='white'
+#             )
+#             brand_negative_wordcloud = generate_wordcloud(
+#                 filtered_data[filtered_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
+#                 background_color='#636e72'
+#             )
+#             range_display = "Showing all data"
+#             wordcloud_range_display = range_display
             
-        return brand_positive_wordcloud, brand_negative_wordcloud, wordcloud_range_display, range_display, reviews_figure, orders_figure, market_share_figure
+#         return brand_positive_wordcloud, brand_negative_wordcloud, wordcloud_range_display, range_display, reviews_figure, orders_figure, market_share_figure
         
-    except Exception as e:
-        logger.error(f"Error in update_details_tab_figures callback: {str(e)}", exc_info=True)
-        return None, None, "Error updating figures", "Error updating figures", reviews_figure, orders_figure, market_share_figure
+#     except Exception as e:
+#         logger.error(f"Error in update_details_tab_figures callback: {str(e)}", exc_info=True)
+#         return None, None, "Error updating figures", "Error updating figures", reviews_figure, orders_figure, market_share_figure
 
 if __name__ == "__main__":
     # Check if running in Databricks

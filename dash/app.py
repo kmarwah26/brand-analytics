@@ -50,19 +50,19 @@ def sqlQuery(query: str) -> pd.DataFrame:
         raise
 
 try:
-    data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
-    sales_data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.monthly_brand_metrics WHERE category = 'Toys & Games'")
+    #data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.vw_brand_insights_toys")
+    #sales_data = sqlQuery("SELECT * FROM retail_cpg_demo.brand_manager.monthly_brand_metrics WHERE category = 'Toys & Games'")
 
     # Load data from CSV
     current_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(current_dir, 'app_data', 'brand_insights_data.csv')
-    #data = pd.read_csv(data_path)
+    data = pd.read_csv(data_path)
     print(f"Data shape: {data.shape}")
     print(f"Data columns: {data.columns}")
 
     # Load sales from CSV
     sales_path = os.path.join(current_dir, 'app_data', 'monthly_sales_toys.csv')
-    #sales_data = pd.read_csv(sales_path)
+    sales_data = pd.read_csv(sales_path)
     print(f"Data shape: {sales_data.shape}")
     print(f"Data columns: {sales_data.columns}")
 
@@ -1834,77 +1834,81 @@ def update_details_tab_figures(orders_relayout, reviews_relayout, market_share_r
             relayout_data = orders_relayout
         elif trigger_id == 'monthly-reviews-chart':
             relayout_data = reviews_relayout
-        else:
+        elif trigger_id == 'market-share-trend':
             relayout_data = market_share_relayout
+            
+        # Initialize wordcloud variables
+        brand_positive_wordcloud = None
+        brand_negative_wordcloud = None
+        range_display = "Zoom in on the chart to filter wordclouds by date range"
+        wordcloud_range_display = ""
         
-        if relayout_data and 'xaxis.range[0]' in relayout_data and 'xaxis.range[1]' in relayout_data:
-            # Get the zoom range
-            start_date = pd.to_datetime(relayout_data['xaxis.range[0]'])
-            end_date = pd.to_datetime(relayout_data['xaxis.range[1]'])
+        if relayout_data:
+            # Check if this is a zoom reset event
+            is_zoom_reset = any(key in relayout_data for key in ['autosize', 'xaxis.autorange', 'yaxis.autorange'])
             
-            # Filter data for the selected range
-            range_data = filtered_data[
-                (filtered_data['date'] >= start_date) & 
-                (filtered_data['date'] <= end_date)
-            ]
-            
-            # Generate wordclouds for the selected range
-            # Positive wordcloud: sentiment_score > 3
-            positive_data = range_data[range_data['sentiment_score'] > 3]
-            brand_positive_wordcloud = generate_wordcloud(
-                positive_data['positive_feature_list'].dropna().tolist(),
-                background_color='white'
-            )
-            
-            # Negative wordcloud: sentiment_score < 3
-            negative_data = range_data[range_data['sentiment_score'] < 3]
-            brand_negative_wordcloud = generate_wordcloud(
-                negative_data['negative_feature_list'].dropna().tolist(),
-                background_color='#636e72'
-            )
-            
-            # Update the range displays
-            range_display = f"Showing data from {start_date.strftime('%B %Y')} to {end_date.strftime('%B %Y')}"
-            wordcloud_range_display = range_display
-            
-            # Update all charts to show the same range
-            for figure in [reviews_figure, orders_figure, market_share_figure]:
-                if figure and 'layout' in figure:
-                    if 'xaxis' not in figure['layout']:
-                        figure['layout']['xaxis'] = {}
-                    figure['layout']['xaxis'].update({
-                        'range': [start_date, end_date],
-                        'autorange': False
-                    })
-            
-        elif relayout_data and any(key in relayout_data for key in ['autosize', 'xaxis.autorange', 'yaxis.autorange']):
-            # Reset zoom on all charts
-            for figure in [reviews_figure, orders_figure, market_share_figure]:
-                if figure and 'layout' in figure:
-                    if 'xaxis' not in figure['layout']:
-                        figure['layout']['xaxis'] = {}
-                    figure['layout']['xaxis'].update({
-                        'autorange': True
-                    })
-            
-            # Show all data in wordclouds
-            # Positive wordcloud: sentiment_score > 3
-            positive_data = filtered_data[filtered_data['sentiment_score'] > 3]
-            brand_positive_wordcloud = generate_wordcloud(
-                positive_data['positive_feature_list'].dropna().tolist(),
-                background_color='white'
-            )
-            
-            # Negative wordcloud: sentiment_score < 3
-            negative_data = filtered_data[filtered_data['sentiment_score'] < 3]
-            brand_negative_wordcloud = generate_wordcloud(
-                negative_data['negative_feature_list'].dropna().tolist(),
-                background_color='#636e72'
-            )
-            range_display = "Showing all data"
-            wordcloud_range_display = range_display
+            if is_zoom_reset:
+                # Keep the current figure state
+                range_display = "Showing all data"
+                wordcloud_range_display = "Showing all data"
+                # Generate wordclouds for all data
+                brand_positive_wordcloud = generate_wordcloud(
+                    filtered_data[filtered_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
+                    background_color='white'
+                )
+                brand_negative_wordcloud = generate_wordcloud(
+                    filtered_data[filtered_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
+                    background_color='#636e72'
+                )
+            elif 'xaxis.range[0]' in relayout_data and 'xaxis.range[1]' in relayout_data:
+                # Get the zoom range
+                start_date = pd.to_datetime(relayout_data['xaxis.range[0]'])
+                end_date = pd.to_datetime(relayout_data['xaxis.range[1]'])
+                
+                # Filter data for the selected range
+                range_data = filtered_data[
+                    (filtered_data['date'] >= start_date) & 
+                    (filtered_data['date'] <= end_date)
+                ]
+                
+                # Generate wordclouds for the selected range
+                brand_positive_wordcloud = generate_wordcloud(
+                    range_data[range_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
+                    background_color='white'
+                )
+                brand_negative_wordcloud = generate_wordcloud(
+                    range_data[range_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
+                    background_color='#636e72'
+                )
+                
+                # Update the range display
+                range_display = f"Showing data from {start_date.strftime('%B %Y')} to {end_date.strftime('%B %Y')}"
+                wordcloud_range_display = f"Data from {start_date.strftime('%B %Y')} to {end_date.strftime('%B %Y')}"
+                
+                # Update all charts to show the same range
+                for figure in [reviews_figure, orders_figure, market_share_figure]:
+                    if figure and 'layout' in figure:
+                        if 'xaxis' not in figure['layout']:
+                            figure['layout']['xaxis'] = {}
+                        figure['layout']['xaxis'].update({
+                            'range': [start_date, end_date],
+                            'autorange': False
+                        })
+            else:
+                # Keep the current figure state
+                range_display = "Showing all data"
+                wordcloud_range_display = "Showing all data"
+                # Generate wordclouds for all data
+                brand_positive_wordcloud = generate_wordcloud(
+                    filtered_data[filtered_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
+                    background_color='white'
+                )
+                brand_negative_wordcloud = generate_wordcloud(
+                    filtered_data[filtered_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
+                    background_color='#636e72'
+                )
         else:
-            # Keep the current state of the figures
+            # If no range is selected, show all data
             brand_positive_wordcloud = generate_wordcloud(
                 filtered_data[filtered_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
                 background_color='white'
@@ -1913,8 +1917,8 @@ def update_details_tab_figures(orders_relayout, reviews_relayout, market_share_r
                 filtered_data[filtered_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
                 background_color='#636e72'
             )
-            range_display = "Showing all data"
-            wordcloud_range_display = range_display
+            range_display = "Zoom in on the chart to filter wordclouds by date range"
+            wordcloud_range_display = "Showing all data"
             
         return brand_positive_wordcloud, brand_negative_wordcloud, wordcloud_range_display, range_display, reviews_figure, orders_figure, market_share_figure
         

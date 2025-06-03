@@ -960,15 +960,17 @@ def update_brand_options(selected_category):
     Input('brand-filter', 'value'),
     Input('retailer-dummy', 'value'),
     Input('date-range-slider', 'value'),
+    Input('monthly-reviews-chart', 'relayoutData'),
+    Input('monthly-orders-chart', 'relayoutData'),
+    State('monthly-reviews-chart', 'figure'),
+    State('monthly-orders-chart', 'figure'),
     prevent_initial_call=True
 )
-def update_visuals(n_clicks, category, brand, retailer, date_range):
-    # Get the trigger that caused the callback
+def update_visuals(n_clicks, category, brand, retailer, date_range, reviews_relayout, orders_relayout, reviews_figure, orders_figure):
+    import copy
     ctx = dash.callback_context
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
-    logger.info(f"update_visuals triggered by {trigger_id} with category={category}, brand={brand}")
-    
-    # Create empty figure template
+
     def create_empty_fig():
         fig = go.Figure()
         fig.update_layout(
@@ -978,658 +980,238 @@ def update_visuals(n_clicks, category, brand, retailer, date_range):
         )
         return fig
 
-    # Return default values if filters are not set
     if category is None or brand is None:
-        logger.info("No category or brand selected, returning empty figures")
         empty_fig = create_empty_fig()
         return (
-            empty_fig,  # sentiment-treemap
-            empty_fig,  # monthly-reviews-chart
-            empty_fig,  # monthly-orders-chart
-            "0%",  # brand-health-score
-            "0%",  # competitive-score
-            "0%",  # product-score
-            "0.0",  # average-rating
-            empty_fig,  # market-share-trend
-            empty_fig,  # pricing-comparison
-            None,  # positive-wordcloud
-            None,  # negative-wordcloud
-            None,  # brand-positive-wordcloud
-            None,  # brand-negative-wordcloud
-            "0",  # total-reviews-counter
-            "0",  # positive-reviews-counter
-            "0",  # neutral-reviews-counter
-            "0",  # negative-reviews-counter
-            "",  # selected-range-display
-            "",  # wordcloud-range-display
-            "",  # sales-brand-name
-            "",  # units-brand-name
-            "",  # reviews-brand-name
-            ""   # rating-brand-name
+            empty_fig, empty_fig, empty_fig, "0%", "0%", "0%", "0.0", empty_fig, empty_fig,
+            None, None, None, None, "0", "0", "0", "0", "", "", "", "", "", ""
         )
 
-    try:
-        # Convert timestamp to datetime
-        start_date = pd.to_datetime(date_range[0], unit='s')
-        end_date = pd.to_datetime(date_range[1], unit='s')
-        logger.info(f"Processing data from {start_date} to {end_date}")
-        
-        # Apply filters
-        category_data = data[
-            (data['category'] == category) & 
-            (data['date'] >= start_date) &
-            (data['date'] <= end_date)
-        ]
-        filtered_data = category_data[category_data['brand'] == brand]
-        logger.info(f"Filtered data shape: {filtered_data.shape}")
-        
-        if len(filtered_data) == 0:
-            logger.warning("No data found for selected filters")
-            empty_fig = create_empty_fig()
-            return (
-                empty_fig,  # sentiment-treemap
-                empty_fig,  # monthly-reviews-chart
-                empty_fig,  # monthly-orders-chart
-                "0%",  # brand-health-score
-                "0%",  # competitive-score
-                "0%",  # product-score
-                "0.0",  # average-rating
-                empty_fig,  # market-share-trend
-                empty_fig,  # pricing-comparison
-                None,  # positive-wordcloud
-                None,  # negative-wordcloud
-                None,  # brand-positive-wordcloud
-                None,  # brand-negative-wordcloud
-                "0",  # total-reviews-counter
-                "0",  # positive-reviews-counter
-                "0",  # neutral-reviews-counter
-                "0",  # negative-reviews-counter
-                "",  # selected-range-display
-                "",  # wordcloud-range-display
-                "",  # sales-brand-name
-                "",  # units-brand-name
-                "",  # reviews-brand-name
-                ""   # rating-brand-name
-            )
+    # Convert timestamp to datetime
+    start_date = pd.to_datetime(date_range[0], unit='s')
+    end_date = pd.to_datetime(date_range[1], unit='s')
 
-        # Initialize wordcloud variables
-        brand_positive_wordcloud = None
-        brand_negative_wordcloud = None
-        range_display = "Zoom in on the chart to filter wordclouds by date range"
-        wordcloud_range_display = ""
+    # Apply filters
+    category_data = data[(data['category'] == category) & (data['date'] >= start_date) & (data['date'] <= end_date)]
+    filtered_data = category_data[category_data['brand'] == brand]
 
-        # Handle wordcloud data based on relayoutData
-        if trigger_id == 'monthly-reviews-chart':
-            # Check if this is a zoom reset event
-            is_zoom_reset = any(key in relayoutData for key in ['autosize', 'xaxis.autorange', 'yaxis.autorange'])
-            
-            if is_zoom_reset:
-                # Keep the current figure state
-                monthly_reviews_chart = current_figure
-                range_display = "Showing all data"
-                wordcloud_range_display = "Showing all data"
-                # Generate wordclouds for all data
-                brand_positive_wordcloud = generate_wordcloud(
-                    filtered_data[filtered_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
-                    background_color='white'
-                )
-                brand_negative_wordcloud = generate_wordcloud(
-                    filtered_data[filtered_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
-                    background_color='#636e72'
-                )
-            elif 'xaxis.range[0]' in relayoutData and 'xaxis.range[1]' in relayoutData:
-                # Get the zoom range
-                start_date = pd.to_datetime(relayoutData['xaxis.range[0]'])
-                end_date = pd.to_datetime(relayoutData['xaxis.range[1]'])
-                
-                # Filter data for the selected range
-                range_data = filtered_data[
-                    (filtered_data['date'] >= start_date) & 
-                    (filtered_data['date'] <= end_date)
-                ]
-                
-                # Generate wordclouds for the selected range
-                brand_positive_wordcloud = generate_wordcloud(
-                    range_data[range_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
-                    background_color='white'
-                )
-                brand_negative_wordcloud = generate_wordcloud(
-                    range_data[range_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
-                    background_color='#636e72'
-                )
-                
-                # Update the range display
-                range_display = f"Showing data from {start_date.strftime('%B %Y')} to {end_date.strftime('%B %Y')}"
-                wordcloud_range_display = f"Data from {start_date.strftime('%B %Y')} to {end_date.strftime('%B %Y')}"
-            else:
-                # Keep the current figure state
-                monthly_reviews_chart = current_figure
-                range_display = "Showing all data"
-                wordcloud_range_display = "Showing all data"
-                # Generate wordclouds for all data
-                brand_positive_wordcloud = generate_wordcloud(
-                    filtered_data[filtered_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
-                    background_color='white'
-                )
-                brand_negative_wordcloud = generate_wordcloud(
-                    filtered_data[filtered_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
-                    background_color='#636e72'
-                )
-        else:
-            # If no range is selected, show all data
-            brand_positive_wordcloud = generate_wordcloud(
-                filtered_data[filtered_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
-                background_color='white'
-            )
-            brand_negative_wordcloud = generate_wordcloud(
-                filtered_data[filtered_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
-                background_color='#636e72'
-            )
-            range_display = "Zoom in on the chart to filter wordclouds by date range"
-            wordcloud_range_display = "Showing all data"
-
-        # Get reviews from all other brands in the selected category
-        other_brands_data = category_data[category_data['brand'] != brand]
-        
-        # Generate wordclouds for competitor analysis
-        positive_reviews = other_brands_data['positive_feature_list'].dropna().tolist()
-        negative_reviews = other_brands_data['negative_feature_list'].dropna().tolist()
-        
-        positive_wordcloud = generate_wordcloud(positive_reviews, background_color='white')
-        negative_wordcloud = generate_wordcloud(negative_reviews, background_color='#636e72')
-
-        # Create sentiment visualization
-        sentiment_counts = filtered_data['sentiment'].value_counts()
-        
-        # Define color mapping for each sentiment with modern shades
-        sentiment_colors = {
-            'Love': '#10e380',      # Material Green
-            'Great': '#26c77b',     # Light Green
-            'Positive': '#30b375',     # Light Green
-            'Fine': '#4f6159',      # Material Amber
-            'Disappointed': '#c45b1d', # Material Orange
-            'Bad': '#c4281d',        # Material Red
-            'Negative': '#fc1505'        # Material Red
-        }
-        
-        # Create treemap with sentiment data
-        sentiment_fig = go.Figure(go.Treemap(
-            ids=sentiment_counts.index,
-            labels=sentiment_counts.index,
-            parents=[''] * len(sentiment_counts),
-            values=sentiment_counts.values,
-            marker=dict(
-                colors=[sentiment_colors.get(s, '#808080') for s in sentiment_counts.index],
-                line=dict(width=2, color='#2d3436')
-            ),
-            textinfo="label+value+percent parent",
-            textfont=dict(color='white', size=14),
-            hovertemplate='<span style="color: #2d3436">%{label}</span><br>' +
-                         'Count: %{value}<br>' +
-                         'Percentage: %{percentParent:.1%}<br>' +
-                         '<extra></extra>'
-        ))
-        
-        sentiment_fig.update_layout(
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(t=0, l=25, r=25, b=25),
-            font=dict(color='white'),
-            # title=dict(
-            #     text="Sentiment Distribution",
-            #     font=dict(size=20, color='white'),
-            #     x=0.5,
-            #     y=0.95
-            # ),
-            showlegend=True,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.15,
-                xanchor="center",
-                x=0.5,
-                font=dict(size=12, color='white'),
-                bgcolor='rgba(0,0,0,0)',
-                bordercolor='rgba(0,0,0,0)'
-            )
-        )
-
-        # Create market share trend
-        # Create Share of Voice chart
-        # Group by month and brand to get review counts
-        monthly_brand_counts = category_data.groupby([
-            pd.to_datetime(category_data['date']).dt.to_period('M'),
-            'brand'
-        ]).size().reset_index(name='review_count')
-        
-        # Convert period to timestamp for plotting
-        monthly_brand_counts['date'] = monthly_brand_counts['date'].dt.to_timestamp()
-        
-        # Create stacked area chart
-        market_share_fig = go.Figure()
-        
-        # Add area for each brand
-        for brand_name in category_data['brand'].unique():
-            brand_data = monthly_brand_counts[monthly_brand_counts['brand'] == brand_name]
-            market_share_fig.add_trace(go.Scatter(
-                x=brand_data['date'],
-                y=brand_data['review_count'],
-                name=brand_name,
-                stackgroup='one',
-                fill='tonexty',
-                line=dict(width=0.5),
-                text=brand_data['review_count'].apply(lambda x: f'{x:,}'),
-                textposition='top center',
-                textfont=dict(
-                    color='#2d3436',
-                    size=11
-                ),
-                hovertemplate='<span style="color: #2d3436">%{x|%B %Y}</span><br>' +
-                             '<span style="color: #2d3436">Brand: %{fullData.name}</span><br>' +
-                             '<span style="color: #2d3436">Reviews: %{y:,}</span><br>' +
-                             '<extra></extra>',
-                hoverlabel=dict(
-                    bgcolor='white',
-                    font=dict(
-                        family='Arial',
-                        size=14,
-                        color='#2d3436'
-                    ),
-                    bordercolor='#636e72'
-                )
-            ))
-        
-        market_share_fig.update_layout(
-            #title='Share of Voice',
-            xaxis_title='Month',
-            yaxis_title='Number of Reviews',
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='white'),
-            xaxis=dict(
-                gridcolor='#404040',
-                tickformat='%B %Y'
-            ),
-            yaxis=dict(
-                gridcolor='#404040',
-                showgrid=True
-            ),
-            hovermode='x unified',
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1,
-                font=dict(size=12, color='white'),
-                bgcolor='rgba(0,0,0,0)',
-                bordercolor='rgba(0,0,0,0)'
-            )
-        )
-
-        # Create price analysis chart
-        price_fig = go.Figure()
-
-        brands = category_data['brand'].unique()
-        colors = ['#FFA500' if b == brand else '#3498db' for b in brands]
-        
-        price_fig.add_trace(go.Bar(
-            x=brands,
-            y=category_data.groupby('brand')['avg_brand_price'].mean(),
-            name='Brand Average Price',
-            marker_color=colors
-        ))
-        
-        category_avg = category_data['avg_brand_price'].mean()
-        price_fig.add_trace(go.Scatter(
-            x=category_data['brand'].unique(),
-            y=[category_avg] * len(category_data['brand'].unique()),
-            name='Category Average',
-            line=dict(color='#e74c3c', width=2, dash='dash'),
-            mode='lines'
-        ))
-        
-        price_fig.update_layout(
-            #title='Brand Price Comparison',
-            xaxis_title='Brand',
-            yaxis_title='Average Price',
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='white'),
-            xaxis=dict(gridcolor='#404040'),
-            yaxis=dict(gridcolor='#404040'),
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1,
-                font=dict(size=12, color='white'),
-                bgcolor='rgba(0,0,0,0)',
-                bordercolor='rgba(0,0,0,0)'
-            )
-        )
-
-        # Create monthly sentiment line chart
-        monthly_sentiment = filtered_data.groupby([
-            pd.to_datetime(filtered_data['date']).dt.to_period('M'),
-            pd.cut(filtered_data['sentiment_score'], 
-                  bins=[0, 2.9, 3.1, 5], 
-                  labels=['Negative (<3)', 'Neutral (=3)', 'Positive (>3)'])
-        ]).size().unstack(fill_value=0)
-        
-        monthly_sentiment.index = monthly_sentiment.index.astype(str)
-        
-        # Calculate mean and standard deviation for each sentiment category
-        sentiment_stats = {}
-        for sentiment in monthly_sentiment.columns:
-            mean = monthly_sentiment[sentiment].mean()
-            std = monthly_sentiment[sentiment].std()
-            sentiment_stats[sentiment] = {
-                'mean': mean,
-                'std': std,
-                'threshold': mean + (1.5 * std)
-            }
-
-        # Define colors for sentiment categories
-        sentiment_colors = {
-            'Positive (>3)': '#10e380',  # Bright Green
-            'Neutral (=3)': '#4f6159',   # Dark Grey
-            'Negative (<3)': '#c4281d'   # Red
-        }
-        
-        monthly_reviews_chart = go.Figure()
-        
-        # Add lines for each sentiment category
-        for sentiment in monthly_sentiment.columns:
-            # Create custom hover text that includes statistical flags
-            hover_text = []
-            for month, value in monthly_sentiment[sentiment].items():
-                stats = sentiment_stats[sentiment]
-                if value > stats['threshold']:
-                    hover_text.append(
-                        f"<span style='color: #2d3436'>Month: {month}<br>" +
-                        f"Count: {value}<br>" +
-                        f"⚠️ Spike Detected</span>"
-                    )
-                else:
-                    hover_text.append(
-                        f"<span style='color: #2d3436'>Month: {month}<br>" +
-                        f"Count: {value}</span>"
-                    )
-            
-            monthly_reviews_chart.add_trace(go.Scatter(
-                name=sentiment,
-                x=monthly_sentiment.index,
-                y=monthly_sentiment[sentiment],
-                mode='lines+markers+text',
-                line=dict(
-                    color=sentiment_colors.get(sentiment, '#808080'),
-                    width=3
-                ),
-                marker=dict(
-                    size=8,
-                    color=sentiment_colors.get(sentiment, '#808080'),
-                    line=dict(width=2, color='#1a1a1a')
-                ),
-                text=monthly_sentiment[sentiment].apply(lambda x: f'{x:,}'),
-                textposition='top center',
-                textfont=dict(
-                    color='white',
-                    size=11
-                ),
-                hovertext=hover_text,
-                hoverinfo='text'
-            ))
-        
-        monthly_reviews_chart.update_layout(
-            #title='Monthly Review Trends',
-            xaxis_title='Month',
-            yaxis_title='Number of Reviews',
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='white'),
-            xaxis=dict(
-                gridcolor='#404040',
-                tickangle=45
-            ),
-            yaxis=dict(
-                gridcolor='#404040',
-                showgrid=True
-            ),
-            hovermode='x unified',
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1,
-                font=dict(size=12, color='white'),
-                bgcolor='rgba(0,0,0,0)',
-                bordercolor='rgba(0,0,0,0)'
-            ),
-            margin=dict(t=40, l=25, r=25, b=50)
-        )
-
-        # Create monthly orders chart
-        # Filter sales data for the selected brand and date range
-        start_date = pd.to_datetime(date_range[0], unit='s')
-        end_date = pd.to_datetime(date_range[1], unit='s')
-        
-        # Convert month column in sales_data to datetime if not already
-        sales_data['month'] = pd.to_datetime(sales_data['month'])
-        
-        brand_sales = sales_data[
-            (sales_data['brand'] == brand) & 
-            (sales_data['month'] >= start_date) &
-            (sales_data['month'] <= end_date)
-        ]
-        
-        # Group by month
-        monthly_sales = brand_sales.groupby(
-            pd.to_datetime(brand_sales['month']).dt.to_period('M')
-        ).agg({
-            'units': 'sum',
-            'returns': 'sum'
-        }).reset_index()
-        
-        # Convert period to string for plotting
-        monthly_sales['date'] = monthly_sales['month'].astype(str)
-        
-        orders_fig = go.Figure()
-        
-        # Add line for orders (using units)
-        orders_fig.add_trace(go.Scatter(
-            x=monthly_sales['date'],
-            y=monthly_sales['units'],
-            mode='lines+markers+text',
-            name='Units Sold',
-            line=dict(
-                color='#FFA500',
-                width=3
-            ),
-            marker=dict(
-                size=8,
-                color='#FFA500',
-                line=dict(width=2, color='#1a1a1a')
-            ),
-            text=[f'{int(x):,}' for x in monthly_sales['units']],
-            textposition='top center',
-            textfont=dict(
-                color='white',
-                size=11
-            ),
-            hovertemplate='<span style="color: #2d3436">Month: %{x}</span><br>' +
-                         '<span style="color: #2d3436">Units Sold: %{y:,.0f}</span><br>' +
-                         '<extra></extra>'
-        ))
-        
-        # Add line for returns
-        orders_fig.add_trace(go.Scatter(
-            x=monthly_sales['date'],
-            y=monthly_sales['returns'],
-            mode='lines+markers+text',
-            name='Returns',
-            line=dict(
-                color='#e74c3c',
-                width=3
-            ),
-            marker=dict(
-                size=8,
-                color='#e74c3c',
-                line=dict(width=2, color='#1a1a1a')
-            ),
-            text=[f'{int(x):,}' for x in monthly_sales['returns']],
-            textposition='bottom center',
-            textfont=dict(
-                color='white',
-                size=11
-            ),
-            hovertemplate='<span style="color: #2d3436">Month: %{x}</span><br>' +
-                         '<span style="color: #2d3436">Returns: %{y:,.0f}</span><br>' +
-                         '<span style="color: #2d3436">Return Rate: %{customdata:.1%}</span><br>' +
-                         '<extra></extra>',
-            customdata=[x/y for x, y in zip(monthly_sales['returns'], monthly_sales['units'])]
-        ))
-        
-        orders_fig.update_layout(
-            xaxis_title='Month',
-            yaxis_title='Number of Units/Returns',
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='white'),
-            xaxis=dict(
-                gridcolor='#404040',
-                tickangle=45,
-                range=[monthly_sales['date'].min(), monthly_sales['date'].max()]
-            ),
-            yaxis=dict(
-                gridcolor='#404040',
-                showgrid=True
-            ),
-            hovermode='x unified',
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1,
-                font=dict(size=12, color='white'),
-                bgcolor='rgba(0,0,0,0)',
-                bordercolor='rgba(0,0,0,0)'
-            ),
-            margin=dict(t=40, l=25, r=25, b=50)
-        )
-
-        # Calculate metrics
-        total_reviews = len(filtered_data)
-        positive_reviews_count = len(filtered_data[filtered_data['sentiment_score'] >= 3])
-        neutral_reviews_count = len(filtered_data[(filtered_data['sentiment_score'] >= 2) & (filtered_data['sentiment_score'] < 3)])
-        negative_reviews_count = len(filtered_data[filtered_data['sentiment_score'] < 2])
-        
-        # Calculate scores
-        brand_health = (filtered_data['sentiment_score'] >= 3).mean() * 100
-        competitive_position = np.random.uniform(75, 95)
-        product_score = np.random.uniform(80, 98)
-        
-        # Determine color based on brand health score
-        if brand_health >= 80:
-            health_color = '#2ecc71'  # Green
-        elif brand_health >= 70:
-            health_color = '#f1c40f'  # Yellow
-        else:
-            health_color = '#e74c3c'  # Red
-            
-        # Calculate sales share metrics with random YoY growth
-        total_category_units = sales_data[
-            (sales_data['month'] >= start_date) & 
-            (sales_data['month'] <= end_date)
-        ]['units'].sum()
-        
-        brand_units = sales_data[
-            (sales_data['brand'] == brand) & 
-            (sales_data['month'] >= start_date) & 
-            (sales_data['month'] <= end_date)
-        ]['units'].sum()
-        
-        sales_share = (brand_units / total_category_units * 100) if total_category_units > 0 else 0
-        sales_rank = sales_data[
-            (sales_data['month'] >= start_date) & 
-            (sales_data['month'] <= end_date)
-        ].groupby('brand')['units'].sum().rank(ascending=False)[brand]
-        sales_yoy_growth = np.random.uniform(-15, 25)  # Random growth between -15% and 25%
-
-        # Calculate units share metrics with random YoY growth
-        total_category_reviews = category_data['review_text'].count()
-        brand_reviews = filtered_data['review_text'].count()
-        units_share = (brand_reviews / total_category_reviews * 100) if total_category_reviews > 0 else 0
-        units_rank = category_data.groupby('brand')['review_text'].count().rank(ascending=False)[brand]
-        units_yoy_growth = np.random.uniform(-10, 20)  # Random growth between -10% and 20%
-
-        # Calculate reviews share metrics with random YoY growth
-        reviews_share = (brand_reviews / total_category_reviews * 100) if total_category_reviews > 0 else 0
-        reviews_rank = category_data.groupby('brand')['review_text'].count().rank(ascending=False)[brand]
-        reviews_yoy_growth = np.random.uniform(-5, 15)  # Random growth between -5% and 15%
-
-        # Calculate rating metrics with random YoY change
-        current_rating = filtered_data['rating'].mean()
-        rating_rank = category_data.groupby('brand')['rating'].mean().rank(ascending=False)[brand]
-        rating_change = np.random.uniform(-0.5, 0.5)  # Random change between -0.5 and 0.5
-
-        return [
-            sentiment_fig.to_dict(),
-            monthly_reviews_chart.to_dict(),
-            orders_fig.to_dict(),
-            html.Div(f"{brand_health:.1f}%", style={'color': health_color}),
-            html.Div(f"{competitive_position:.1f}%"),
-            html.Div(f"{product_score:.1f}%"),
-            html.Div(f"{filtered_data['rating'].mean():.1f}/5.0"),
-            market_share_fig.to_dict(),
-            price_fig.to_dict(),
-            positive_wordcloud,
-            negative_wordcloud,
-            brand_positive_wordcloud,
-            brand_negative_wordcloud,
-            html.Div(f"{total_reviews:,}"),
-            html.Div(f"{positive_reviews_count:,}"),
-            html.Div(f"{neutral_reviews_count:,}"),
-            html.Div(f"{negative_reviews_count:,}"),
-            html.Div(range_display),
-            html.Div(wordcloud_range_display),
-            brand,  # sales-brand-name
-            brand,  # units-brand-name
-            brand,  # reviews-brand-name
-            brand   # rating-brand-name
-        ]
-        
-    except Exception as e:
-        logger.error(f"Error in update_visuals callback: {str(e)}", exc_info=True)
+    if len(filtered_data) == 0:
         empty_fig = create_empty_fig()
-        return [
-            empty_fig.to_dict(),  # sentiment-treemap
-            empty_fig.to_dict(),  # monthly-reviews-chart
-            empty_fig.to_dict(),  # monthly-orders-chart
-            "0%",  # brand-health-score
-            "0%",  # competitive-score
-            "0%",  # product-score
-            "0.0",  # average-rating
-            empty_fig.to_dict(),  # market-share-trend
-            empty_fig.to_dict(),  # pricing-comparison
-            None,  # positive-wordcloud
-            None,  # negative-wordcloud
-            None,  # brand-positive-wordcloud
-            None,  # brand-negative-wordcloud
-            "0",  # total-reviews-counter
-            "0",  # positive-reviews-counter
-            "0",  # neutral-reviews-counter
-            "0",  # negative-reviews-counter
-            "",  # selected-range-display
-            "",  # wordcloud-range-display
-            "",  # sales-brand-name
-            "",  # units-brand-name
-            "",  # reviews-brand-name
-            ""   # rating-brand-name
-        ]
+        return (
+            empty_fig, empty_fig, empty_fig, "0%", "0%", "0%", "0.0", empty_fig, empty_fig,
+            None, None, None, None, "0", "0", "0", "0", "", "", "", "", "", ""
+        )
+
+    # --- Cross-filtering and zoom preservation logic ---
+    xaxis_range = None
+    range_display = "Zoom in on the chart to filter wordclouds by date range"
+    wordcloud_range_display = "Showing all data"
+    range_data = filtered_data
+
+    # 1. If relayout event, use its range
+    if trigger_id == 'monthly-reviews-chart' and reviews_relayout:
+        if 'xaxis.range[0]' in reviews_relayout and 'xaxis.range[1]' in reviews_relayout:
+            xaxis_range = [reviews_relayout['xaxis.range[0]'], reviews_relayout['xaxis.range[1]']]
+        elif any(k in reviews_relayout for k in ['autosize', 'xaxis.autorange', 'yaxis.autorange']):
+            xaxis_range = None
+    elif trigger_id == 'monthly-orders-chart' and orders_relayout:
+        if 'xaxis.range[0]' in orders_relayout and 'xaxis.range[1]' in orders_relayout:
+            xaxis_range = [orders_relayout['xaxis.range[0]'], orders_relayout['xaxis.range[1]']]
+        elif any(k in orders_relayout for k in ['autosize', 'xaxis.autorange', 'yaxis.autorange']):
+            xaxis_range = None
+    # 2. If not a relayout event, but previous figure had a zoom, preserve it
+    elif reviews_figure and 'layout' in reviews_figure and 'xaxis' in reviews_figure['layout']:
+        prev_range = reviews_figure['layout']['xaxis'].get('range')
+        if prev_range:
+            xaxis_range = prev_range
+
+    # Now, filter your data for wordclouds and set xaxis for both charts
+    if xaxis_range:
+        start_zoom = pd.to_datetime(xaxis_range[0])
+        end_zoom = pd.to_datetime(xaxis_range[1])
+        range_data = filtered_data[(filtered_data['date'] >= start_zoom) & (filtered_data['date'] <= end_zoom)]
+        range_display = f"Showing data from {start_zoom.strftime('%B %Y')} to {end_zoom.strftime('%B %Y')}"
+        wordcloud_range_display = range_display
+    else:
+        range_data = filtered_data
+        range_display = "Zoom in on the chart to filter wordclouds by date range"
+        wordcloud_range_display = "Showing all data"
+
+    # --- Wordclouds ---
+    brand_positive_wordcloud = generate_wordcloud(
+        range_data[range_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
+        background_color='white'
+    )
+    brand_negative_wordcloud = generate_wordcloud(
+        range_data[range_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
+        background_color='#636e72'
+    )
+    # Competitor wordclouds (always full range for category)
+    other_brands_data = category_data[category_data['brand'] != brand]
+    positive_wordcloud = generate_wordcloud(other_brands_data['positive_feature_list'].dropna().tolist(), background_color='white')
+    negative_wordcloud = generate_wordcloud(other_brands_data['negative_feature_list'].dropna().tolist(), background_color='#636e72')
+
+    # --- Sentiment Treemap ---
+    sentiment_counts = range_data['sentiment'].value_counts()
+    sentiment_colors = {
+        'Love': '#10e380', 'Great': '#26c77b', 'Positive': '#30b375', 'Fine': '#4f6159',
+        'Disappointed': '#c45b1d', 'Bad': '#c4281d', 'Negative': '#fc1505'
+    }
+    sentiment_fig = go.Figure(go.Treemap(
+        ids=sentiment_counts.index,
+        labels=sentiment_counts.index,
+        parents=[''] * len(sentiment_counts),
+        values=sentiment_counts.values,
+        marker=dict(colors=[sentiment_colors.get(s, '#808080') for s in sentiment_counts.index], line=dict(width=2, color='#2d3436')),
+        textinfo="label+value+percent parent",
+        textfont=dict(color='white', size=14),
+        hovertemplate='<span style="color: #2d3436">%{label}</span><br>Count: %{value}<br>Percentage: %{percentParent:.1%}<br><extra></extra>'
+    ))
+    sentiment_fig.update_layout(
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', margin=dict(t=0, l=25, r=25, b=25), font=dict(color='white'),
+        showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.15, xanchor="center", x=0.5, font=dict(size=12, color='white'), bgcolor='rgba(0,0,0,0)', bordercolor='rgba(0,0,0,0)')
+    )
+
+    # --- Monthly Reviews Chart ---
+    monthly_sentiment = range_data.groupby([
+        pd.to_datetime(range_data['date']).dt.to_period('M'),
+        pd.cut(range_data['sentiment_score'], bins=[0, 2.9, 3.1, 5], labels=['Negative (<3)', 'Neutral (=3)', 'Positive (>3)'])
+    ]).size().unstack(fill_value=0)
+    monthly_sentiment.index = monthly_sentiment.index.astype(str)
+    sentiment_stats = {}
+    for sentiment in monthly_sentiment.columns:
+        mean = monthly_sentiment[sentiment].mean()
+        std = monthly_sentiment[sentiment].std()
+        sentiment_stats[sentiment] = {'mean': mean, 'std': std, 'threshold': mean + (1.5 * std)}
+    sentiment_colors_line = {'Positive (>3)': '#10e380', 'Neutral (=3)': '#4f6159', 'Negative (<3)': '#c4281d'}
+    monthly_reviews_chart = go.Figure()
+    for sentiment in monthly_sentiment.columns:
+        hover_text = []
+        for month, value in monthly_sentiment[sentiment].items():
+            stats = sentiment_stats[sentiment]
+            if value > stats['threshold']:
+                hover_text.append(f"<span style='color: #2d3436'>Month: {month}<br>Count: {value}<br>⚠️ Spike Detected</span>")
+            else:
+                hover_text.append(f"<span style='color: #2d3436'>Month: {month}<br>Count: {value}</span>")
+        monthly_reviews_chart.add_trace(go.Scatter(
+            name=sentiment, x=monthly_sentiment.index, y=monthly_sentiment[sentiment], mode='lines+markers+text',
+            line=dict(color=sentiment_colors_line.get(sentiment, '#808080'), width=3),
+            marker=dict(size=8, color=sentiment_colors_line.get(sentiment, '#808080'), line=dict(width=2, color='#1a1a1a')),
+            text=monthly_sentiment[sentiment].apply(lambda x: f'{x:,}'), textposition='top center', textfont=dict(color='white', size=11),
+            hovertext=hover_text, hoverinfo='text'))
+    if xaxis_range:
+        monthly_reviews_chart.update_layout(xaxis={'range': xaxis_range, 'autorange': False})
+    else:
+        monthly_reviews_chart.update_layout(xaxis={'autorange': True})
+    monthly_reviews_chart.update_layout(
+        xaxis_title='Month', yaxis_title='Number of Reviews', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white'),
+        xaxis=dict(gridcolor='#404040', tickangle=45), yaxis=dict(gridcolor='#404040', showgrid=True), hovermode='x unified',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12, color='white'), bgcolor='rgba(0,0,0,0)', bordercolor='rgba(0,0,0,0)'), margin=dict(t=40, l=25, r=25, b=50)
+    )
+
+    # --- Monthly Orders Chart ---
+    sales_data['month'] = pd.to_datetime(sales_data['month'])
+    brand_sales = sales_data[(sales_data['brand'] == brand) & (sales_data['month'] >= start_date) & (sales_data['month'] <= end_date)]
+    monthly_sales = brand_sales.groupby(pd.to_datetime(brand_sales['month']).dt.to_period('M')).agg({'units': 'sum', 'returns': 'sum'}).reset_index()
+    monthly_sales['date'] = monthly_sales['month'].astype(str)
+    orders_fig = go.Figure()
+    orders_fig.add_trace(go.Scatter(
+        x=monthly_sales['date'], y=monthly_sales['units'], mode='lines+markers+text', name='Units Sold',
+        line=dict(color='#FFA500', width=3), marker=dict(size=8, color='#FFA500', line=dict(width=2, color='#1a1a1a')),
+        text=[f'{int(x):,}' for x in monthly_sales['units']], textposition='top center', textfont=dict(color='white', size=11),
+        hovertemplate='<span style="color: #2d3436">Month: %{x}</span><br><span style="color: #2d3436">Units Sold: %{y:,.0f}</span><br><extra></extra>'
+    ))
+    orders_fig.add_trace(go.Scatter(
+        x=monthly_sales['date'], y=monthly_sales['returns'], mode='lines+markers+text', name='Returns',
+        line=dict(color='#e74c3c', width=3), marker=dict(size=8, color='#e74c3c', line=dict(width=2, color='#1a1a1a')),
+        text=[f'{int(x):,}' for x in monthly_sales['returns']], textposition='bottom center', textfont=dict(color='white', size=11),
+        hovertemplate='<span style="color: #2d3436">Month: %{x}</span><br><span style="color: #2d3436">Returns: %{y:,.0f}</span><br><span style="color: #2d3436">Return Rate: %{customdata:.1%}</span><br><extra></extra>',
+        customdata=[x/y if y else 0 for x, y in zip(monthly_sales['returns'], monthly_sales['units'])]
+    ))
+    if xaxis_range:
+        orders_fig.update_layout(xaxis={'range': xaxis_range, 'autorange': False})
+    else:
+        orders_fig.update_layout(xaxis={'autorange': True})
+    orders_fig.update_layout(
+        xaxis_title='Month', yaxis_title='Number of Units/Returns', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white'),
+        xaxis=dict(gridcolor='#404040', tickangle=45), yaxis=dict(gridcolor='#404040', showgrid=True), hovermode='x unified',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12, color='white'), bgcolor='rgba(0,0,0,0)', bordercolor='rgba(0,0,0,0)'), margin=dict(t=40, l=25, r=25, b=50)
+    )
+
+    # --- Market Share Trend ---
+    monthly_brand_counts = category_data.groupby([
+        pd.to_datetime(category_data['date']).dt.to_period('M'), 'brand']
+    ).size().reset_index(name='review_count')
+    monthly_brand_counts['date'] = monthly_brand_counts['date'].dt.to_timestamp()
+    market_share_fig = go.Figure()
+    for brand_name in category_data['brand'].unique():
+        brand_data = monthly_brand_counts[monthly_brand_counts['brand'] == brand_name]
+        market_share_fig.add_trace(go.Scatter(
+            x=brand_data['date'], y=brand_data['review_count'], name=brand_name, stackgroup='one', fill='tonexty', line=dict(width=0.5),
+            text=brand_data['review_count'].apply(lambda x: f'{x:,}'), textposition='top center', textfont=dict(color='#2d3436', size=11),
+            hovertemplate='<span style="color: #2d3436">%{x|%B %Y}</span><br><span style="color: #2d3436">Brand: %{fullData.name}</span><br><span style="color: #2d3436">Reviews: %{y:,}</span><br><extra></extra>',
+            hoverlabel=dict(bgcolor='white', font=dict(family='Arial', size=14, color='#2d3436'), bordercolor='#636e72')
+        ))
+    market_share_fig.update_layout(
+        xaxis_title='Month', yaxis_title='Number of Reviews', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white'),
+        xaxis=dict(gridcolor='#404040', tickformat='%B %Y'), yaxis=dict(gridcolor='#404040', showgrid=True), hovermode='x unified',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12, color='white'), bgcolor='rgba(0,0,0,0)', bordercolor='rgba(0,0,0,0)')
+    )
+
+    # --- Pricing Comparison ---
+    price_fig = go.Figure()
+    brands = category_data['brand'].unique()
+    colors = ['#FFA500' if b == brand else '#3498db' for b in brands]
+    price_fig.add_trace(go.Bar(
+        x=brands, y=category_data.groupby('brand')['avg_brand_price'].mean(), name='Brand Average Price', marker_color=colors
+    ))
+    category_avg = category_data['avg_brand_price'].mean()
+    price_fig.add_trace(go.Scatter(
+        x=brands, y=[category_avg] * len(brands), name='Category Average', line=dict(color='#e74c3c', width=2, dash='dash'), mode='lines'
+    ))
+    price_fig.update_layout(
+        xaxis_title='Brand', yaxis_title='Average Price', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white'),
+        xaxis=dict(gridcolor='#404040'), yaxis=dict(gridcolor='#404040'),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=12, color='white'), bgcolor='rgba(0,0,0,0)', bordercolor='rgba(0,0,0,0)')
+    )
+
+    # --- Metrics ---
+    total_reviews = len(range_data)
+    positive_reviews_count = len(range_data[range_data['sentiment_score'] >= 3])
+    neutral_reviews_count = len(range_data[(range_data['sentiment_score'] >= 2) & (range_data['sentiment_score'] < 3)])
+    negative_reviews_count = len(range_data[range_data['sentiment_score'] < 2])
+    brand_health = (range_data['sentiment_score'] >= 3).mean() * 100
+    competitive_position = np.random.uniform(75, 95)
+    product_score = np.random.uniform(80, 98)
+    if brand_health >= 80:
+        health_color = '#2ecc71'
+    elif brand_health >= 70:
+        health_color = '#f1c40f'
+    else:
+        health_color = '#e74c3c'
+
+    return [
+        sentiment_fig.to_dict(),
+        monthly_reviews_chart.to_dict(),
+        orders_fig.to_dict(),
+        html.Div(f"{brand_health:.1f}%", style={'color': health_color}),
+        html.Div(f"{competitive_position:.1f}%"),
+        html.Div(f"{product_score:.1f}%"),
+        html.Div(f"{range_data['rating'].mean():.1f}/5.0"),
+        market_share_fig.to_dict(),
+        price_fig.to_dict(),
+        positive_wordcloud,
+        negative_wordcloud,
+        brand_positive_wordcloud,
+        brand_negative_wordcloud,
+        html.Div(f"{total_reviews:,}"),
+        html.Div(f"{positive_reviews_count:,}"),
+        html.Div(f"{neutral_reviews_count:,}"),
+        html.Div(f"{negative_reviews_count:,}"),
+        html.Div(range_display),
+        html.Div(wordcloud_range_display),
+        brand, brand, brand, brand
+    ]
 
 # Update the callback to handle all tab switching
 @app.callback(
@@ -1796,131 +1378,131 @@ def update_category_review_header(selected_category):
     return "What people are saying about other products in the selected category..."
 
 # Update the cross-filtering callback to handle all interactions
-@app.callback(
-    [Output('brand-positive-wordcloud', 'src', allow_duplicate=True),
-     Output('brand-negative-wordcloud', 'src', allow_duplicate=True),
-     Output('wordcloud-range-display', 'children', allow_duplicate=True),
-     Output('selected-range-display', 'children', allow_duplicate=True),
-     Output('monthly-reviews-chart', 'figure', allow_duplicate=True),
-     Output('monthly-orders-chart', 'figure', allow_duplicate=True),
-     Output('market-share-trend', 'figure', allow_duplicate=True)],
-    [Input('monthly-orders-chart', 'relayoutData'),
-     Input('monthly-reviews-chart', 'relayoutData'),
-     Input('market-share-trend', 'relayoutData')],
-    [State('category-filter', 'value'),
-     State('brand-filter', 'value'),
-     State('monthly-reviews-chart', 'figure'),
-     State('monthly-orders-chart', 'figure'),
-     State('market-share-trend', 'figure')],
-    prevent_initial_call=True
-)
-def update_details_tab_figures(orders_relayout, reviews_relayout, market_share_relayout, category, brand, reviews_figure, orders_figure, market_share_figure):
-    # Get the trigger that caused the callback
-    ctx = dash.callback_context
-    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
-    logger.info(f"update_details_tab_figures triggered by {trigger_id} with category={category}, brand={brand}")
+# @app.callback(
+#     [Output('brand-positive-wordcloud', 'src', allow_duplicate=True),
+#      Output('brand-negative-wordcloud', 'src', allow_duplicate=True),
+#      Output('wordcloud-range-display', 'children', allow_duplicate=True),
+#      Output('selected-range-display', 'children', allow_duplicate=True),
+#      Output('monthly-reviews-chart', 'figure', allow_duplicate=True),
+#      Output('monthly-orders-chart', 'figure', allow_duplicate=True),
+#      Output('market-share-trend', 'figure', allow_duplicate=True)],
+#     [Input('monthly-orders-chart', 'relayoutData'),
+#      Input('monthly-reviews-chart', 'relayoutData'),
+#      Input('market-share-trend', 'relayoutData')],
+#     [State('category-filter', 'value'),
+#      State('brand-filter', 'value'),
+#      State('monthly-reviews-chart', 'figure'),
+#      State('monthly-orders-chart', 'figure'),
+#      State('market-share-trend', 'figure')],
+#     prevent_initial_call=True
+# )
+# def update_details_tab_figures(orders_relayout, reviews_relayout, market_share_relayout, category, brand, reviews_figure, orders_figure, market_share_figure):
+#     # Get the trigger that caused the callback
+#     ctx = dash.callback_context
+#     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+#     logger.info(f"update_details_tab_figures triggered by {trigger_id} with category={category}, brand={brand}")
     
-    if not category or not brand:
-        logger.info("No category or brand selected, returning current figures")
-        return None, None, "", "", reviews_figure, orders_figure, market_share_figure
+#     if not category or not brand:
+#         logger.info("No category or brand selected, returning current figures")
+#         return None, None, "", "", reviews_figure, orders_figure, market_share_figure
         
-    try:
-        filtered_data = data[(data['category'] == category) & (data['brand'] == brand)]
-        logger.info(f"Filtered data shape: {filtered_data.shape}")
+#     try:
+#         filtered_data = data[(data['category'] == category) & (data['brand'] == brand)]
+#         logger.info(f"Filtered data shape: {filtered_data.shape}")
         
-        # Determine which chart triggered the callback and get the date range
-        relayout_data = None
-        if trigger_id == 'monthly-orders-chart':
-            relayout_data = orders_relayout
-        elif trigger_id == 'monthly-reviews-chart':
-            relayout_data = reviews_relayout
-        else:
-            relayout_data = market_share_relayout
+#         # Determine which chart triggered the callback and get the date range
+#         relayout_data = None
+#         if trigger_id == 'monthly-orders-chart':
+#             relayout_data = orders_relayout
+#         elif trigger_id == 'monthly-reviews-chart':
+#             relayout_data = reviews_relayout
+#         else:
+#             relayout_data = market_share_relayout
         
-        if relayout_data and 'xaxis.range[0]' in relayout_data and 'xaxis.range[1]' in relayout_data:
-            # Get the zoom range
-            start_date = pd.to_datetime(relayout_data['xaxis.range[0]'])
-            end_date = pd.to_datetime(relayout_data['xaxis.range[1]'])
+#         if relayout_data and 'xaxis.range[0]' in relayout_data and 'xaxis.range[1]' in relayout_data:
+#             # Get the zoom range
+#             start_date = pd.to_datetime(relayout_data['xaxis.range[0]'])
+#             end_date = pd.to_datetime(relayout_data['xaxis.range[1]'])
             
-            # Filter data for the selected range
-            range_data = filtered_data[
-                (filtered_data['date'] >= start_date) & 
-                (filtered_data['date'] <= end_date)
-            ]
+#             # Filter data for the selected range
+#             range_data = filtered_data[
+#                 (filtered_data['date'] >= start_date) & 
+#                 (filtered_data['date'] <= end_date)
+#             ]
             
-            # Generate wordclouds for the selected range
-            # Positive wordcloud: sentiment_score > 3
-            positive_data = range_data[range_data['sentiment_score'] > 3]
-            brand_positive_wordcloud = generate_wordcloud(
-                positive_data['positive_feature_list'].dropna().tolist(),
-                background_color='white'
-            )
+#             # Generate wordclouds for the selected range
+#             # Positive wordcloud: sentiment_score > 3
+#             positive_data = range_data[range_data['sentiment_score'] > 3]
+#             brand_positive_wordcloud = generate_wordcloud(
+#                 positive_data['positive_feature_list'].dropna().tolist(),
+#                 background_color='white'
+#             )
             
-            # Negative wordcloud: sentiment_score < 3
-            negative_data = range_data[range_data['sentiment_score'] < 3]
-            brand_negative_wordcloud = generate_wordcloud(
-                negative_data['negative_feature_list'].dropna().tolist(),
-                background_color='#636e72'
-            )
+#             # Negative wordcloud: sentiment_score < 3
+#             negative_data = range_data[range_data['sentiment_score'] < 3]
+#             brand_negative_wordcloud = generate_wordcloud(
+#                 negative_data['negative_feature_list'].dropna().tolist(),
+#                 background_color='#636e72'
+#             )
             
-            # Update the range displays
-            range_display = f"Showing data from {start_date.strftime('%B %Y')} to {end_date.strftime('%B %Y')}"
-            wordcloud_range_display = range_display
+#             # Update the range displays
+#             range_display = f"Showing data from {start_date.strftime('%B %Y')} to {end_date.strftime('%B %Y')}"
+#             wordcloud_range_display = range_display
             
-            # Update all charts to show the same range
-            for figure in [reviews_figure, orders_figure, market_share_figure]:
-                if figure and 'layout' in figure:
-                    if 'xaxis' not in figure['layout']:
-                        figure['layout']['xaxis'] = {}
-                    figure['layout']['xaxis'].update({
-                        'range': [start_date, end_date],
-                        'autorange': False
-                    })
+#             # Update all charts to show the same range
+#             for figure in [reviews_figure, orders_figure, market_share_figure]:
+#                 if figure and 'layout' in figure:
+#                     if 'xaxis' not in figure['layout']:
+#                         figure['layout']['xaxis'] = {}
+#                     figure['layout']['xaxis'].update({
+#                         'range': [start_date, end_date],
+#                         'autorange': False
+#                     })
             
-        elif relayout_data and any(key in relayout_data for key in ['autosize', 'xaxis.autorange', 'yaxis.autorange']):
-            # Reset zoom on all charts
-            for figure in [reviews_figure, orders_figure, market_share_figure]:
-                if figure and 'layout' in figure:
-                    if 'xaxis' not in figure['layout']:
-                        figure['layout']['xaxis'] = {}
-                    figure['layout']['xaxis'].update({
-                        'autorange': True
-                    })
+#         elif relayout_data and any(key in relayout_data for key in ['autosize', 'xaxis.autorange', 'yaxis.autorange']):
+#             # Reset zoom on all charts
+#             for figure in [reviews_figure, orders_figure, market_share_figure]:
+#                 if figure and 'layout' in figure:
+#                     if 'xaxis' not in figure['layout']:
+#                         figure['layout']['xaxis'] = {}
+#                     figure['layout']['xaxis'].update({
+#                         'autorange': True
+#                     })
             
-            # Show all data in wordclouds
-            # Positive wordcloud: sentiment_score > 3
-            positive_data = filtered_data[filtered_data['sentiment_score'] > 3]
-            brand_positive_wordcloud = generate_wordcloud(
-                positive_data['positive_feature_list'].dropna().tolist(),
-                background_color='white'
-            )
+#             # Show all data in wordclouds
+#             # Positive wordcloud: sentiment_score > 3
+#             positive_data = filtered_data[filtered_data['sentiment_score'] > 3]
+#             brand_positive_wordcloud = generate_wordcloud(
+#                 positive_data['positive_feature_list'].dropna().tolist(),
+#                 background_color='white'
+#             )
             
-            # Negative wordcloud: sentiment_score < 3
-            negative_data = filtered_data[filtered_data['sentiment_score'] < 3]
-            brand_negative_wordcloud = generate_wordcloud(
-                negative_data['negative_feature_list'].dropna().tolist(),
-                background_color='#636e72'
-            )
-            range_display = "Showing all data"
-            wordcloud_range_display = range_display
-        else:
-            # Keep the current state of the figures
-            brand_positive_wordcloud = generate_wordcloud(
-                filtered_data[filtered_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
-                background_color='white'
-            )
-            brand_negative_wordcloud = generate_wordcloud(
-                filtered_data[filtered_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
-                background_color='#636e72'
-            )
-            range_display = "Showing all data"
-            wordcloud_range_display = range_display
+#             # Negative wordcloud: sentiment_score < 3
+#             negative_data = filtered_data[filtered_data['sentiment_score'] < 3]
+#             brand_negative_wordcloud = generate_wordcloud(
+#                 negative_data['negative_feature_list'].dropna().tolist(),
+#                 background_color='#636e72'
+#             )
+#             range_display = "Showing all data"
+#             wordcloud_range_display = range_display
+#         else:
+#             # Keep the current state of the figures
+#             brand_positive_wordcloud = generate_wordcloud(
+#                 filtered_data[filtered_data['sentiment_score'] > 3]['positive_feature_list'].dropna().tolist(),
+#                 background_color='white'
+#             )
+#             brand_negative_wordcloud = generate_wordcloud(
+#                 filtered_data[filtered_data['sentiment_score'] < 3]['negative_feature_list'].dropna().tolist(),
+#                 background_color='#636e72'
+#             )
+#             range_display = "Showing all data"
+#             wordcloud_range_display = range_display
             
-        return brand_positive_wordcloud, brand_negative_wordcloud, wordcloud_range_display, range_display, reviews_figure, orders_figure, market_share_figure
+#         return brand_positive_wordcloud, brand_negative_wordcloud, wordcloud_range_display, range_display, reviews_figure, orders_figure, market_share_figure
         
-    except Exception as e:
-        logger.error(f"Error in update_details_tab_figures callback: {str(e)}", exc_info=True)
-        return None, None, "Error updating figures", "Error updating figures", reviews_figure, orders_figure, market_share_figure
+#     except Exception as e:
+#         logger.error(f"Error in update_details_tab_figures callback: {str(e)}", exc_info=True)
+#         return None, None, "Error updating figures", "Error updating figures", reviews_figure, orders_figure, market_share_figure
 
 if __name__ == "__main__":
     # Check if running in Databricks
